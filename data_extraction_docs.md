@@ -94,3 +94,38 @@ After running the Python extraction script, the following Parquet files are crea
 
 Additionally, a small `rx_fills_subset.csv` file is generated for quick testing and debugging.
 
+
+
+## 🧠 Next Steps: Polypharmacy Spell Reconstruction
+
+The next step is to move to **Python-based temporal processing**, using the extracted Rx fills and AE events:
+
+1. **Medication Interval Construction**
+
+   * Convert each Rx fill to an interval `[fill_date, fill_date + supplydayscount - 1]`.
+   * Stack all intervals per patient.
+
+2. **Daily Drug Count Timeline**
+
+   * For each patient, construct a timeline of **distinct active drugs per day**.
+   * Identify **entry dates** = first day with ≥5 concurrent medications.
+
+3. **Spell Detection**
+
+   * **Exit date** = last day before the patient drops below 5 concurrent meds and remains below for 15 consecutive days.
+   * Extend the spell by **15 days after exit**.
+   * Minimum spell length = **30 days** (to avoid spurious short periods).
+
+4. **Multiple Spells per Patient**
+
+   * Allow patients to **re-enter polypharmacy** after a gap and detect multiple spells.
+   * Each spell is treated as a separate observation.
+
+5. **AE Labeling**
+
+   * For each spell, check if **any AE occurs between entry date and exit+15 days**.
+   * AE events outside of these intervals are ignored.
+
+6. **Censoring**
+
+   * Spell follow-up ends at `exit_date + 15 days` or at disenrollment, whichever comes first.
