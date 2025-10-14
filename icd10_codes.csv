@@ -1,31 +1,31 @@
 code,description
-T36%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T37%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T38%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T39%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T40%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T41%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T42%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T43%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T44%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T45%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T46%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T47%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T48%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T49%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
-T50%,Poisoning by, adverse effect of and underdosing of drugs, medicaments and biological substances
+T36%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T37%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T38%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T39%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T40%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T41%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T42%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T43%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T44%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T45%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T46%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T47%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T48%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T49%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T50%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
 R296,Repeated falls
-R410,Disorientation, unspecified
+R410,Disorientation unspecified
 F30%,Mood disorders
 F31%,Mood disorders
 F32%,Mood disorders
 F39%,Mood disorders
 R42%,Dizziness and giddiness
-R44%,Hallucinations not from drug abuse, alcohol, mood disorders or schizophrenia
+R44%,Hallucinations not from drug abuse alcohol mood disorders or schizophrenia
 R502,Drug induced fever
 T886,Anaphylactic shock due to the adverse effect of a drug
 T887,Unspecified adverse effect of a drug
-N141,Nephropathy induced by drugs, medicaments and biological substances
+N141,Nephropathy induced by drugs medicaments and biological substances
 D590,Drug-induced autoimmune hemolytic anemia
 D592,Drug-induced non-autoimmune hemolytic anemia
 D611,Drug-induced aplastic anemia
@@ -33,6 +33,6 @@ J704,Drug-induced interstitial lung disorders
 K71%,Toxic liver disease (various subtypes)
 K711,Toxic liver disease with hepatic necrosis
 K712,Toxic liver disease with acute hepatitis
-K716,Toxic liver disease with hepatitis, not elsewhere classified
-K719,Toxic liver disease, unspecified
+K716,Toxic liver disease with hepatitis not elsewhere classified
+K719,Toxic liver disease unspecified
 L561,Drug photoallergic response

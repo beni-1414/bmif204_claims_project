@@ -5,8 +5,9 @@ from pathlib import Path
 # ------------------------------
 # CONFIG
 # ------------------------------
-SCRATCH_PATH = Path(" /n/scratch/users/b/bef299/polypharmacy_project/")
-PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/")
+SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project/")
+PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
+(PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
 ICD_CSV_PATH = PROJECT_PATH / "icd10_codes.csv"
 OUT_RX = SCRATCH_PATH / "rx_fills.parquet"
 OUT_AE = SCRATCH_PATH / "adverse_events.parquet"
@@ -16,22 +17,21 @@ OUT_ENROLL = SCRATCH_PATH / "enrollment.parquet"
 # ------------------------------
 # DB CONNECTION
 # ------------------------------
-conn_str = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=<your_server_name>;"
-    "DATABASE=InovalonSample1M;"
-    "Trusted_Connection=yes;"
-)
+conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=InovalonSample1M;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+
 conn = pyodbc.connect(conn_str)
 
 # ------------------------------
 # LOAD ICD10 CSV & BUILD CONDITIONS
 # ------------------------------
-icd_df = pd.read_csv(ICD_CSV_PATH)
+icd_df = pd.read_csv(ICD_CSV_PATH, dtype=str)
+print(icd_df.head())
 
 # Build OR conditions like: (cc.CodeValue LIKE 'T36%' OR cc.CodeValue LIKE 'R296' ...)
 code_conditions = []
 for code in icd_df['code']:
+    if pd.isna(code):
+        continue
     code = code.strip().replace('.', '')
     if '%' not in code:
         code = code + '%'   # ensure we match children too
@@ -119,18 +119,26 @@ def run_and_save(query: str, out_path: Path):
     df.to_parquet(out_path)
     print(f"  Saved to {out_path}")
 
+def write_sql(query: str, out_path: Path):
+    """Helper to write SQL query text to a .sql file for inspection/testing."""
+    out_path.write_text(query)
+    print(f"Wrote SQL to {out_path}")
+
 # RX fills
-run_and_save(base_cte + " SELECT * FROM rx_filtered", OUT_RX)
+write_sql(base_cte + " SELECT  * FROM rx_filtered", PROJECT_PATH / "queries/rx_fills_query.sql")
+run_and_save(base_cte + " SELECT  * FROM rx_filtered", OUT_RX)
 
 # Adverse events (ICD10 filtered dynamically)
-run_and_save(base_cte + " SELECT * FROM adverse_events", OUT_AE)
+write_sql(base_cte + " SELECT  * FROM adverse_events", PROJECT_PATH / "queries/adverse_events_query.sql")
+run_and_save(base_cte + " SELECT  * FROM adverse_events", OUT_AE)
 
 # Demographics
 demo_query = base_cte + """
-SELECT m.MemberUID, m.birthyear, m.gender, m.race, m.zip, m.state
+SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, m.zip3value, m.statecode
 FROM [InovalonSample1M].[dbo].[Member] m
 JOIN eligible_members em ON m.MemberUID = em.MemberUID
 """
+write_sql(demo_query, PROJECT_PATH / "queries/demographics_query.sql")
 run_and_save(demo_query, OUT_DEMO)
 
 # Enrollment
@@ -139,6 +147,7 @@ SELECT e.MemberUID, e.effectivedate, e.terminationdate
 FROM [InovalonSample1M].[dbo].[MemberEnrollment] e
 JOIN eligible_members em ON e.MemberUID = em.MemberUID
 """
+write_sql(enroll_query, PROJECT_PATH / "queries/enrollment_query.sql")
 run_and_save(enroll_query, OUT_ENROLL)
 
 # Optional: save a small CSV subset for debugging
