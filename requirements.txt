@@ -1,0 +1,15 @@
+# Python dependencies for bmif204_claims_project
+# Data manipulation and analysis
+pandas>=2.0.0
+
+# Database connectivity
+pyodbc>=4.0.0
+
+# File format support for Parquet files
+pyarrow>=10.0.0
+
+# Optional: For better performance with large datasets
+fastparquet>=0.8.0
+
+# Note: pathlib is part of Python standard library (Python 3.4+)
+# No additional installation required for pathlib
