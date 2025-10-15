@@ -26,28 +26,34 @@ def log(msg: str):
 
 def build_spells_for_member(df):
     """Given all Rx fills for one member, return a list of (entry, raw_exit, extended_exit)."""
+    # List to hold change points (date, +1 for start, -1 for end)
     cps = []
+    # Group fills by drug code and merge overlapping intervals for each drug
     for ndc, g in df.groupby("ndc11code"):
         intervals = g[["start", "end"]].values
         intervals = intervals[intervals[:, 0].argsort()]
         merged = []
         cur_start, cur_end = intervals[0]
         for s, e in intervals[1:]:
+            # Merge intervals if they overlap or are consecutive
             if s <= cur_end + timedelta(days=1):
                 cur_end = max(cur_end, e)
             else:
                 merged.append((cur_start, cur_end))
                 cur_start, cur_end = s, e
         merged.append((cur_start, cur_end))
+        # Mark start (+1) and end (-1) of each merged interval
         for s, e in merged:
             cps.append((s, +1))
             cps.append((e + timedelta(days=1), -1))
     if not cps:
         return []
 
+    # Sort change points by date
     cps.sort()
     compressed = []
     day, delta = cps[0]
+    # Compress change points for same day
     for d, dl in cps[1:]:
         if d == day:
             delta += dl
@@ -56,6 +62,7 @@ def build_spells_for_member(df):
             day, delta = d, dl
     compressed.append((day, delta))
 
+    # Detect spells where concurrent drugs >= MIN_CONCURRENT
     spells = []
     count = 0
     in_spell = False
@@ -65,12 +72,14 @@ def build_spells_for_member(df):
 
     for i in range(len(compressed)):
         day, delta = compressed[i]
+        # Calculate segment length to next change point
         if i < len(compressed) - 1:
             next_day = compressed[i + 1][0]
             seg_len = (next_day - day).days
         else:
             seg_len = 1  # tail
 
+        # Start spell if concurrent count threshold met
         if not in_spell and count >= MIN_CONCURRENT:
             in_spell = True
             entry = day
@@ -78,6 +87,7 @@ def build_spells_for_member(df):
             low_start = None
 
         if in_spell:
+            # Track days below threshold to determine spell exit
             if count < MIN_CONCURRENT:
                 if low_start is None:
                     low_start = day
@@ -86,6 +96,7 @@ def build_spells_for_member(df):
                 if below_days >= EXIT_BELOW_DAYS:
                     raw_exit = low_start - timedelta(days=1)
                     extended_exit = raw_exit + timedelta(days=EXTEND_DAYS)
+                    # Only keep spells of sufficient length
                     if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN:
                         spells.append((entry, raw_exit, extended_exit))
                     in_spell = False
@@ -96,8 +107,10 @@ def build_spells_for_member(df):
                 below_days = 0
                 low_start = None
 
+        # Update concurrent drug count
         count += delta
 
+    # Handle spell that runs to end of data
     if in_spell:
         raw_exit = compressed[-1][0]
         extended_exit = raw_exit + timedelta(days=EXTEND_DAYS)
