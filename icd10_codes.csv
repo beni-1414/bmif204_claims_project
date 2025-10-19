@@ -14,10 +14,51 @@ T47%,Poisoning by adverse effect of and underdosing of drugs medicaments and bio
 T48%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
 T49%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
 T50%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+T78%, Adverse effects not elsewhere classified
+T80%, Complications of surgical and medical care not elsewhere classified
+T886,Anaphylactic shock due to the adverse effect of a drug
+T887,Unspecified adverse effect of a drug
+D590,Drug-induced autoimmune hemolytic anemia
+D592,Drug-induced non-autoimmune hemolytic anemia
+D521,Drug-induced folate deficiency anemia
+D642,Secondary sideroblastic anaemia due to drugs and toxins
+D683,Hemorrhagic disorder due to circulating anticoagulants
+E15,Nondiabetic hypoglycaemic coma
+E160,Drug-induced hypoglycaemia without coma
+E231,Drug-induced hypopituitarism
+E242,Drug-induced Cushing’s syndrome
+E273,Drug-induced adrenocortical insufficiency
+E661,Drug-induced obesity
 F11%, Mental and behavioural disorders due to use of opioids
 F13%, Mental and behavioural disorders due to use of sedatives or hypnotics
 F15%, Mental and behavioural disorders due to use of other stimulants including caffeine
 F19%, Mental and behavioural disorders due to multiple drug use and use of other psychoactive substances
+G210,Malignant neuroleptic syndrome
+G211,Other drug-induced secondary parkinsonism
+G212,Secondary parkinsonism due to other external agents
+G240,Drug-induced dystonia
+G251,Drug-induced tremor
+G254,Drug-induced chorea
+G256,Drug-induced tics and other tics of organic origin
+G444,Drug-induced headache not elsewhere classified
+G620,Drug-induced polyneuropathy
+G720,Drug-induced myopathy
+H263,Drug-induced cataract
+H406,Glaucoma secondary to drugs
+K853,Drug-induced pancreatitis
+L105,Drug-induced pemphigus
+L233,Allergic contact dermatitis due to drugs in contact with skin
+L244,Irritant contact dermatitis due to drugs in contact with skin
+L251,Unspecified contact dermatitis due to drugs in contact with skin
+L27,Dermatitis due to substances taken internally
+L270,Generalized skin eruption due to drugs and medicaments
+L271,Localized skin eruption due to drugs and medicaments
+L278,Dermatitis due to other substances taken internally
+L279,Dermatitis due to unspecified substance taken internally
+K71%,Toxic liver disease (various subtypes)
+N141,Nephropathy induced by drugs medicaments and biological substances
+N142,Nephropathy induced by drugs medicaments and biological substances
+
 R296,Repeated falls
 R410,Disorientation unspecified
 F30%,Mood disorders
@@ -27,16 +68,3 @@ F39%,Mood disorders
 R42%,Dizziness and giddiness
 R44%,Hallucinations not from drug abuse alcohol mood disorders or schizophrenia
 R502,Drug induced fever
-T886,Anaphylactic shock due to the adverse effect of a drug
-T887,Unspecified adverse effect of a drug
-N141,Nephropathy induced by drugs medicaments and biological substances
-D590,Drug-induced autoimmune hemolytic anemia
-D592,Drug-induced non-autoimmune hemolytic anemia
-D611,Drug-induced aplastic anemia
-J704,Drug-induced interstitial lung disorders
-K71%,Toxic liver disease (various subtypes)
-K711,Toxic liver disease with hepatic necrosis
-K712,Toxic liver disease with acute hepatitis
-K716,Toxic liver disease with hepatitis not elsewhere classified
-K719,Toxic liver disease unspecified
-L561,Drug photoallergic response
