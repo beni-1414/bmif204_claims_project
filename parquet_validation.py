@@ -7,6 +7,7 @@ OUT_FILES = [
     Path("/n/scratch/users/b/bef299/polypharmacy_project/adverse_events.parquet"),
     Path("/n/scratch/users/b/bef299/polypharmacy_project/demographics.parquet"),
     Path("/n/scratch/users/b/bef299/polypharmacy_project/enrollment.parquet"),
+    Path("/n/scratch/users/b/bef299/polypharmacy_project/spells_with_labels.parquet"),
 ]
 
 def test_parquet_file(path: Path):

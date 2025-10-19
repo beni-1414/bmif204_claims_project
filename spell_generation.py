@@ -150,7 +150,8 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
                 "spell_id": sid,
                 "entry_date": entry,
                 "raw_exit_date": raw_exit,
-                "extended_exit_date": extended
+                "extended_exit_date": extended,
+                "spell_length_days": (extended - entry).days + 1
             })
         if idx % 5000 == 0:
             log(f"Processed {idx:,}/{n_members:,} members...")
