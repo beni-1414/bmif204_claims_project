@@ -3,21 +3,27 @@ import pandas as pd
 from pathlib import Path
 
 # ------------------------------
+# DB CONNECTION
+# ------------------------------
+full = True
+if full:
+    suffix = ""
+    conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=Inovalon;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+else:
+    suffix = "_sample1M"
+    conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=InovalonSample1M;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+
+# ------------------------------
 # CONFIG
 # ------------------------------
 SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project/")
 PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
 (PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
 ICD_CSV_PATH = PROJECT_PATH / "icd10_codes.csv"
-OUT_RX = SCRATCH_PATH / "rx_fills.parquet"
-OUT_AE = SCRATCH_PATH / "adverse_events.parquet"
-OUT_DEMO = SCRATCH_PATH / "demographics.parquet"
-OUT_ENROLL = SCRATCH_PATH / "enrollment.parquet"
-
-# ------------------------------
-# DB CONNECTION
-# ------------------------------
-conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=InovalonSample1M;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+OUT_RX = SCRATCH_PATH / f"rx_fills{suffix}.parquet"
+OUT_AE = SCRATCH_PATH / f"adverse_events{suffix}.parquet"
+OUT_DEMO = SCRATCH_PATH / f"demographics{suffix}.parquet"
+OUT_ENROLL = SCRATCH_PATH / f"enrollment{suffix}.parquet"
 
 conn = pyodbc.connect(conn_str)
 
@@ -48,7 +54,7 @@ WITH first_fills AS (
         r.MemberUID,
         r.ndc11code,
         MIN(r.filldate) AS first_fill_date
-    FROM [InovalonSample1M].[dbo].[RxClaim] r
+    FROM [RxClaim] r
     WHERE r.supplydayscount IS NOT NULL
     GROUP BY r.MemberUID, r.ndc11code
 ),
@@ -76,9 +82,14 @@ eligible_members AS (
         m.birthyear,
         (YEAR(p.index_date) - m.birthyear) AS age_at_index
     FROM polypharmacy_index p
-    JOIN [InovalonSample1M].[dbo].[Member] m
+    JOIN [Member] m
       ON p.MemberUID = m.MemberUID
+    JOIN [MemberEnrollment] e
+      ON p.MemberUID = e.MemberUID
     WHERE (YEAR(p.index_date) - m.birthyear) >= 65
+      -- Ensure continuous enrollment for at least 6 months before index
+      AND e.effectivedate <= DATEADD(DAY, -180, p.index_date)
+      AND e.terminationdate >= p.index_date
 ),
 rx_filtered AS (
     SELECT 
@@ -86,7 +97,7 @@ rx_filtered AS (
         r.filldate,
         r.ndc11code,
         r.supplydayscount
-    FROM [InovalonSample1M].[dbo].[RxClaim] r
+    FROM [RxClaim] r
     JOIN eligible_members em
       ON r.MemberUID = em.MemberUID
     WHERE r.supplydayscount IS NOT NULL
@@ -98,8 +109,8 @@ adverse_events AS (
         cc.ServiceDate AS event_date,
         cc.CodeType,
         cc.CodeValue
-    FROM [InovalonSample1M].[dbo].[Claim] c
-    JOIN [InovalonSample1M].[dbo].[ClaimCode] cc
+    FROM [Claim] c
+    JOIN [ClaimCode] cc
        ON c.ClaimUID = cc.ClaimUID
     JOIN eligible_members em
        ON c.MemberUID = em.MemberUID
@@ -135,7 +146,7 @@ run_and_save(base_cte + " SELECT  * FROM adverse_events", OUT_AE)
 # Demographics
 demo_query = base_cte + """
 SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, m.zip3value, m.statecode
-FROM [InovalonSample1M].[dbo].[Member] m
+FROM [Member] m
 JOIN eligible_members em ON m.MemberUID = em.MemberUID
 """
 write_sql(demo_query, PROJECT_PATH / "queries/demographics_query.sql")
@@ -144,7 +155,7 @@ run_and_save(demo_query, OUT_DEMO)
 # Enrollment
 enroll_query = base_cte + """
 SELECT e.MemberUID, e.effectivedate, e.terminationdate
-FROM [InovalonSample1M].[dbo].[MemberEnrollment] e
+FROM [MemberEnrollment] e
 JOIN eligible_members em ON e.MemberUID = em.MemberUID
 """
 write_sql(enroll_query, PROJECT_PATH / "queries/enrollment_query.sql")
