@@ -14,7 +14,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 MIN_CONCURRENT = 5
-EXIT_BELOW_DAYS = 15
 EXTEND_DAYS = 15
 MIN_SPELL_LEN = 30
 
@@ -93,7 +92,7 @@ def build_spells_for_member(df):
                     low_start = day
                     below_days = 0
                 below_days += seg_len
-                if below_days >= EXIT_BELOW_DAYS:
+                if below_days >= EXTEND_DAYS:
                     raw_exit = low_start - timedelta(days=1)
                     extended_exit = raw_exit + timedelta(days=EXTEND_DAYS)
                     # Only keep spells of sufficient length
