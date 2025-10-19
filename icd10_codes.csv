@@ -14,6 +14,10 @@ T47%,Poisoning by adverse effect of and underdosing of drugs medicaments and bio
 T48%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
 T49%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
 T50%,Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances
+F11%, Mental and behavioural disorders due to use of opioids
+F13%, Mental and behavioural disorders due to use of sedatives or hypnotics
+F15%, Mental and behavioural disorders due to use of other stimulants including caffeine
+F19%, Mental and behavioural disorders due to multiple drug use and use of other psychoactive substances
 R296,Repeated falls
 R410,Disorientation unspecified
 F30%,Mood disorders
