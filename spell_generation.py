@@ -14,8 +14,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 MIN_CONCURRENT = 5
-EXTEND_DAYS = 15
-MIN_SPELL_LEN = 30
+EXTEND_DAYS = 21
+MIN_SPELL_LEN = 30 + EXTEND_DAYS # It includes the extension period
 
 
 def log(msg: str):
@@ -161,7 +161,7 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
         log("No spells detected. Exiting.")
         return
 
-    # ---------- Enrollment censoring ----------
+    # Enrollment censoring: ensure the spell is within enrollment periods
     log("Applying enrollment censoring...")
     enr["effectivedate"] = pd.to_datetime(enr["effectivedate"]).dt.date
     enr["terminationdate"] = pd.to_datetime(enr["terminationdate"]).dt.date
@@ -191,16 +191,23 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
         if g is None:
             had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
             continue
-        mask = (g["event_date"] >= r.entry_date) & (g["event_date"] <= r.followup_end_date)
-        sub = g[mask]
+
+        mask_in_window = (g["event_date"] >= r.entry_date) & (g["event_date"] <= r.followup_end_date)
+        sub = g[mask_in_window]
+
         if sub.empty:
             had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
         else:
-            had_ae.append(True)
-            first_ae_date.append(sub["event_date"].min())
-            ae_codes.append(sub["CodeValue"].unique().tolist())
-        if idx % 100000 == 0 and idx > 0:
-            log(f"Labeled {idx:,} spells...")
+            # Exclude AE codes already seen before this spell
+            prior_events = g[g["event_date"] < r.entry_date]["CodeValue"].unique()
+            new_codes = [c for c in sub["CodeValue"].unique() if c not in prior_events]
+
+            if len(new_codes) == 0:
+                had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
+            else:
+                had_ae.append(True)
+                first_ae_date.append(sub[sub["CodeValue"].isin(new_codes)]["event_date"].min())
+                ae_codes.append(new_codes)
 
     spells["had_ae"] = had_ae
     spells["first_ae_date"] = first_ae_date
@@ -209,9 +216,9 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
 
     # ---------- Save outputs ----------
     log("Saving output files...")
-    spells.to_parquet(base / "spells_with_labels.parquet", index=False)
-    spells.head(500).to_csv(base / "spells_debug_sample.csv", index=False)
-    log(f"✅ Wrote {len(spells):,} spells to {base/'spells_with_labels.parquet'}")
+    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days.parquet", index=False)
+    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days.csv", index=False)
+    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days.parquet'}")
 
 
 if __name__ == "__main__":
