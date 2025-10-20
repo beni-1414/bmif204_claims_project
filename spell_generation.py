@@ -68,6 +68,8 @@ def build_spells_for_member(df):
     # List to hold change points (date, +1 for start, -1 for end)
     cps = []
     # Group fills by drug code and merge overlapping intervals for each drug
+    drug_changes_local = []  # track (MemberUID, date, change, drug)
+
     for ndc, g in df.groupby("ndc11code"):
         intervals = g[["start", "end"]].values
         intervals = intervals[intervals[:, 0].argsort()]
@@ -81,10 +83,23 @@ def build_spells_for_member(df):
                 merged.append((cur_start, cur_end))
                 cur_start, cur_end = s, e
         merged.append((cur_start, cur_end))
+
         # Mark start (+1) and end (-1) of each merged interval
         for s, e in merged:
             cps.append((s, +1))
             cps.append((e + timedelta(days=1), -1))
+            drug_changes_local.append({
+                "MemberUID": df["MemberUID"].iloc[0],
+                "date": s,
+                "change_type": "add",
+                "ndc11code": ndc
+            })
+            drug_changes_local.append({
+                "MemberUID": df["MemberUID"].iloc[0],
+                "date": e + timedelta(days=1),
+                "change_type": "drop",
+                "ndc11code": ndc
+            })
     if not cps:
         return []
 
@@ -156,11 +171,11 @@ def build_spells_for_member(df):
         if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN:
             spells.append((entry, raw_exit, extended_exit))
 
-    return spells
+    return spells, drug_changes_local
 
 def process_member(item):
     mid, g = item
-    mem_spells = build_spells_for_member(g)
+    mem_spells, drug_changes_local = build_spells_for_member(g)
     out = []
     for sid, (entry, raw_exit, extended) in enumerate(mem_spells, 1):
         out.append({
@@ -171,20 +186,20 @@ def process_member(item):
             "extended_exit_date": extended,
             "spell_length_days": (extended - entry).days + 1
         })
-    return out
+    return out, drug_changes_local
 
 
 def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     base = Path(scratch_dir)
 
     # ---------- Load data ----------
-    global SUFFIX
+    global INPUT_SUFFIX
     if OPIOID_FLAG:
-        SUFFIX = "_opioid" + SUFFIX
+        INPUT_SUFFIX = "_opioid" + INPUT_SUFFIX
     log(f"Loading Parquet files from: {base}")
-    rx = pd.read_parquet(base / f"rx_fills{SUFFIX}.parquet")
-    ae = pd.read_parquet(base / f"adverse_events{SUFFIX}.parquet")
-    enr = pd.read_parquet(base / f"enrollment{SUFFIX}.parquet")
+    rx = pd.read_parquet(base / f"rx_fills{INPUT_SUFFIX}.parquet")
+    ae = pd.read_parquet(base / f"adverse_events{INPUT_SUFFIX}.parquet")
+    enr = pd.read_parquet(base / f"enrollment{INPUT_SUFFIX}.parquet")
     log(f"Loaded rx_fills: {len(rx):,} rows | adverse_events: {len(ae):,} rows | enrollment: {len(enr):,} rows")
 
     # ---------- Prepare Rx intervals ----------
@@ -212,8 +227,17 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
             if i % 5000 == 0 or i == total:
                 log(f"  → Processed {i:,}/{total:,} members ({i/total:.1%})")
 
-    spells = pd.DataFrame([r for sublist in results for r in sublist])
+    # Split results into spells and drug changes
+    all_spells = []
+    all_changes = []
+    for spell_list, change_list in results:
+        all_spells.extend(spell_list)
+        all_changes.extend(change_list)
+
+    spells = pd.DataFrame(all_spells)
+    drug_changes = pd.DataFrame(all_changes)
     log(f"Detected total spells: {len(spells):,}")
+    log(f"Captured total drug change events: {len(drug_changes):,}")
     if spells.empty:
         log("No spells detected. Exiting.")
         return
@@ -285,6 +309,53 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
 
     spells = pd.DataFrame(valid_spells)
 
+    # ---------- Apply enrollment + washout censoring to drug_changes ----------
+    log("Applying censoring to drug change events (vectorized)...")
+
+    if not drug_changes.empty:
+        drug_changes["date"] = pd.to_datetime(drug_changes["date"]).dt.date
+        enr["effectivedate"] = pd.to_datetime(enr["effectivedate"]).dt.date
+        enr["terminationdate"] = pd.to_datetime(enr["terminationdate"]).dt.date
+
+        # --- Enrollment censoring (vectorized join instead of loops) ---
+        merged_enr = pd.merge(
+            drug_changes,
+            enr[["MemberUID", "effectivedate", "terminationdate"]],
+            on="MemberUID",
+            how="left"
+        )
+
+        mask_enr = (merged_enr["date"] >= merged_enr["effectivedate"]) & (
+            merged_enr["date"] <= merged_enr["terminationdate"]
+        )
+
+        drug_changes = merged_enr[mask_enr][
+            ["MemberUID", "date", "change_type", "ndc11code"]
+        ].drop_duplicates()
+
+        # --- Spell window censoring (also vectorized join) ---
+        spells["entry_date"] = pd.to_datetime(spells["entry_date"]).dt.date
+        spells["extended_exit_date"] = pd.to_datetime(spells["extended_exit_date"]).dt.date
+
+        merged_spell = pd.merge(
+            drug_changes,
+            spells[["MemberUID", "spell_id", "entry_date", "extended_exit_date"]],
+            on="MemberUID",
+            how="left"
+        )
+
+        mask_spell = (merged_spell["date"] >= merged_spell["entry_date"]) & (
+            merged_spell["date"] <= merged_spell["extended_exit_date"]
+        )
+
+        drug_changes = merged_spell[mask_spell][
+            ["MemberUID", "spell_id", "date", "change_type", "ndc11code"]
+        ].drop_duplicates()
+
+        log(f"Drug change events after censoring: {len(drug_changes):,}")
+    else:
+        log("No drug change events found, skipping censoring.")
+
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events...")
     ae["event_date"] = pd.to_datetime(ae["event_date"]).dt.date
@@ -322,8 +393,10 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     # ---------- Save outputs ----------
     log("Saving output files...")
     spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet", index=False)
+    drug_changes.to_parquet(base / f"drug_changes_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet", index=False)
     spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.csv", index=False)
     log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet'}")
+    log(f"✅ Wrote {len(drug_changes):,} drug change events to {base/f'drug_changes_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet'}")
 
 
 if __name__ == "__main__":
