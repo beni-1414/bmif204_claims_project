@@ -13,7 +13,8 @@ USAGE:
 Usage example:
 --------------
 python spell_generation.py \
-    --suffix "_sample1M" \
+    --output_suffix "_sample1M" \
+    --input_suffix "_sample1M" \
     --opioid_flag True \
     --min_concurrent 3 \
     --extend_days 21 \
@@ -30,8 +31,10 @@ from itertools import islice
 def parse_args():
     parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
 
-    parser.add_argument("--suffix", type=str, default="_sample1M",
-                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
+    parser.add_argument("--output_suffix", type=str, default="_sample1M",
+                        help="Suffix used in output filenames (e.g., '_sample1M' or '')")
+    parser.add_argument("--input_suffix", type=str, default="_sample1M",
+                        help="Suffix used in input filenames (e.g., '_sample1M' or '')")
     parser.add_argument("--opioid_flag", type=lambda x: str(x).lower() in ("1", "true", "yes"),
                         default=False, help="If True, restrict to opioid spells only")
     parser.add_argument("--min_concurrent", type=int, default=3,
@@ -47,7 +50,8 @@ def parse_args():
 
 args = parse_args()
 
-SUFFIX = args.suffix
+INPUT_SUFFIX = args.input_suffix
+OUTPUT_SUFFIX = args.output_suffix
 OPIOID_FLAG = args.opioid_flag
 MIN_CONCURRENT = args.min_concurrent
 EXTEND_DAYS = args.extend_days
@@ -317,9 +321,9 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
 
     # ---------- Save outputs ----------
     log("Saving output files...")
-    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days{SUFFIX}.parquet", index=False)
-    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days{SUFFIX}.csv", index=False)
-    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days{SUFFIX}.parquet'}")
+    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet", index=False)
+    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.csv", index=False)
+    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet'}")
 
 
 if __name__ == "__main__":
