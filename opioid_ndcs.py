@@ -1,10 +1,11 @@
 import json
 import csv
-from ndclib import NDC
+from ndclib import NDC #https://github.com/eddie-cosma/ndclib
 
 # --- STEP 1: Load your openFDA NDC JSON file ---
 with open("drug-ndc-0001-of-0001.json", "r", encoding="utf-8") as f:
     ndc_data = json.load(f)
+# Download from https://open.fda.gov/apis/drug/ndc/download/
 
 results = ndc_data["results"]
 

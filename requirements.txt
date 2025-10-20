@@ -10,6 +10,4 @@ pyarrow>=10.0.0
 
 # Optional: For better performance with large datasets
 fastparquet>=0.8.0
-
-# Note: pathlib is part of Python standard library (Python 3.4+)
-# No additional installation required for pathlib
+ndclib
