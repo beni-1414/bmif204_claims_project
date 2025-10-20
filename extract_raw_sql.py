@@ -87,9 +87,7 @@ eligible_members AS (
     JOIN [MemberEnrollment] e
       ON p.MemberUID = e.MemberUID
     WHERE (YEAR(p.index_date) - m.birthyear) >= 65
-      -- Ensure continuous enrollment for at least 6 months before index
-      AND e.effectivedate <= DATEADD(DAY, -180, p.index_date)
-      AND e.terminationdate >= p.index_date
+      -- Continuous enrollment 6 months prior to index will be enforced in python
 ),
 rx_filtered AS (
     SELECT 

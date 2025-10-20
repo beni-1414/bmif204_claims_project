@@ -180,6 +180,20 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     spells = spells.dropna(subset=["followup_end_date"])
     log(f"Spells after enrollment censoring: {len(spells):,}")
 
+    # Washout censoring: ensure at least 180 days enrollment before spell entry
+    log("Applying washout censoring...")
+    valid_spells = []
+    for _, r in spells.iterrows():
+        enr_rows = enr[enr["MemberUID"] == r.MemberUID]
+        has_washout = False
+        for _, er in enr_rows.iterrows():
+            s, t = er.effectivedate, er.terminationdate
+            if s <= r.entry_date - timedelta(days=180) and t >= r.entry_date:
+                has_washout = True
+                break
+        if has_washout:
+            valid_spells.append(r)
+
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events...")
     ae["event_date"] = pd.to_datetime(ae["event_date"]).dt.date
