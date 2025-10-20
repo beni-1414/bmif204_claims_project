@@ -194,6 +194,11 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
         if has_washout:
             valid_spells.append(r)
 
+    log(f"Spells before washout: {len(spells):,}")
+    log(f"Spells after washout: {len(valid_spells):,}")
+
+    spells = pd.DataFrame(valid_spells)
+
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events...")
     ae["event_date"] = pd.to_datetime(ae["event_date"]).dt.date
