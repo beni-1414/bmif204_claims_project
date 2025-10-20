@@ -24,6 +24,8 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
 import argparse
+from multiprocessing import Pool, cpu_count
+from itertools import islice
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
@@ -152,6 +154,21 @@ def build_spells_for_member(df):
 
     return spells
 
+def process_member(item):
+    mid, g = item
+    mem_spells = build_spells_for_member(g)
+    out = []
+    for sid, (entry, raw_exit, extended) in enumerate(mem_spells, 1):
+        out.append({
+            "MemberUID": mid,
+            "spell_id": sid,
+            "entry_date": entry,
+            "raw_exit_date": raw_exit,
+            "extended_exit_date": extended,
+            "spell_length_days": (extended - entry).days + 1
+        })
+    return out
+
 
 def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     base = Path(scratch_dir)
@@ -172,28 +189,27 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     rx["start"] = rx["filldate"]
     rx["end"] = rx["filldate"] + pd.to_timedelta(rx["supplydayscount"] - 1, unit="D")
 
-    # ---------- Build spells ----------
-    log("Detecting polypharmacy spells per member...")
-    spells = []
+        # ---------- Build spells (parallelized) ----------
+    log("Detecting polypharmacy spells per member (parallel)...")
     n_members = rx["MemberUID"].nunique()
     log(f"Unique members in Rx: {n_members:,}")
 
-    for idx, (mid, g) in enumerate(rx.groupby("MemberUID", sort=False), 1):
-        mem_spells = build_spells_for_member(g)
-        for sid, (entry, raw_exit, extended) in enumerate(mem_spells, 1):
-            spells.append({
-                "MemberUID": mid,
-                "spell_id": sid,
-                "entry_date": entry,
-                "raw_exit_date": raw_exit,
-                "extended_exit_date": extended,
-                "spell_length_days": (extended - entry).days + 1
-            })
-        if idx % 5000 == 0:
-            log(f"Processed {idx:,}/{n_members:,} members...")
+    members_iter = list(rx.groupby("MemberUID", sort=False))
+    nproc = min(cpu_count(), 8)  # cap to 8 for cluster jobs
 
-    spells = pd.DataFrame(spells)
-    log(f"Total spells detected: {len(spells):,}")
+    log(f"Launching parallel pool with {nproc} workers...")
+    with Pool(processes=nproc) as pool:
+        results = []
+        total = len(members_iter)
+        log(f"Processing {total:,} members in parallel...")
+
+        for i, r in enumerate(pool.imap_unordered(process_member, members_iter, chunksize=100), 1):
+            results.append(r)
+            if i % 5000 == 0 or i == total:
+                log(f"  → Processed {i:,}/{total:,} members ({i/total:.1%})")
+
+    spells = pd.DataFrame([r for sublist in results for r in sublist])
+    log(f"Detected total spells: {len(spells):,}")
     if spells.empty:
         log("No spells detected. Exiting.")
         return
