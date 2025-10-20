@@ -216,29 +216,32 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     
     # ---------- Only keep spells with opioid ----------
     if OPIOID_FLAG:
-        log("Flagging spells that contain at least one opioid NDC...")
+        log("Flagging spells that contain at least one opioid NDC (optimized)...")
+
         opioid_df = pd.read_csv("opioid_ndc11_list.csv", dtype=str)
         opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
 
-        # Merge drug fills to identify if each spell contains any opioid
-        rx["filldate"] = pd.to_datetime(rx["filldate"]).dt.date  # ensure consistent type
+        # Tag opioid fills once
         rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
+        rx = rx[rx["is_opioid"]]  # keep only opioid fills (reduces data a lot)
 
-        spell_flags = []
-        for _, s in spells.iterrows():
-            m = s.MemberUID
-            # restrict to fills for that member within the spell window
-            rx_sub = rx[
-                (rx["MemberUID"] == m)
-                & (rx["filldate"] >= s.entry_date)
-                & (rx["filldate"] <= s.extended_exit_date)
-            ]
-            has_opioid = rx_sub["is_opioid"].any()
-            spell_flags.append(has_opioid)
+        # Expand each spell into one row per opioid fill overlap
+        log("Joining spells with opioid fills...")
+        merged = spells.merge(
+            rx[["MemberUID", "filldate"]],
+            on="MemberUID",
+            how="left"
+        )
 
-        spells["has_opioid_drug"] = spell_flags
-        spells = spells[spells["has_opioid_drug"]]
-        log(f"Spells with ≥1 opioid drug: {len(spells):,}")
+        # Keep only overlaps between fill date and spell window
+        mask = (merged["filldate"] >= merged["entry_date"]) & (merged["filldate"] <= merged["extended_exit_date"])
+        merged = merged[mask]
+
+        # Keep unique spells that had any opioid overlap
+        opioid_spell_ids = merged[["MemberUID", "spell_id"]].drop_duplicates()
+
+        log(f"Spells with opioid overlap: {len(opioid_spell_ids):,} / {len(spells):,}")
+        spells = spells.merge(opioid_spell_ids, on=["MemberUID", "spell_id"], how="inner")
 
     # Enrollment censoring: ensure the spell is within enrollment periods
     log("Applying enrollment censoring...")
