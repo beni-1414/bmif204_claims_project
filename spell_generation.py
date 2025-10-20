@@ -7,15 +7,49 @@ Expected files in scratch_dir:
   - adverse_events.parquet   [MemberUID, event_date, CodeType, CodeValue]
   - enrollment.parquet       [MemberUID, effectivedate, terminationdate]
   - demographics.parquet     [MemberUID, ...]
+
+USAGE:
+
+Usage example:
+--------------
+python spell_generation.py \
+    --suffix "_sample1M" \
+    --opioid_flag True \
+    --min_concurrent 3 \
+    --extend_days 21 \
+    --min_spell_len 51
 """
 
 import pandas as pd
 from pathlib import Path
 from datetime import datetime, timedelta
+import argparse
 
-MIN_CONCURRENT = 5
-EXTEND_DAYS = 21
-MIN_SPELL_LEN = 30 + EXTEND_DAYS # It includes the extension period
+def parse_args():
+    parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
+
+    parser.add_argument("--suffix", type=str, default="_sample1M",
+                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
+    parser.add_argument("--opioid_flag", type=lambda x: str(x).lower() in ("1", "true", "yes"),
+                        default=False, help="If True, restrict to opioid spells only")
+    parser.add_argument("--min_concurrent", type=int, default=3,
+                        help="Minimum number of concurrent drugs defining a spell")
+    parser.add_argument("--extend_days", type=int, default=21,
+                        help="Extension period (days) after last fill below threshold")
+    parser.add_argument("--min_spell_len", type=int, default=None,
+                        help="Minimum total spell length (if not provided, 30 + extend_days)")
+
+    return parser.parse_args()
+
+
+
+args = parse_args()
+
+SUFFIX = args.suffix
+OPIOID_FLAG = args.opioid_flag
+MIN_CONCURRENT = args.min_concurrent
+EXTEND_DAYS = args.extend_days
+MIN_SPELL_LEN = args.min_spell_len or (30 + EXTEND_DAYS)
 
 
 def log(msg: str):
@@ -123,10 +157,13 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     base = Path(scratch_dir)
 
     # ---------- Load data ----------
+    global SUFFIX
+    if OPIOID_FLAG:
+        SUFFIX = "_opioid" + SUFFIX
     log(f"Loading Parquet files from: {base}")
-    rx = pd.read_parquet(base / "rx_fills.parquet")
-    ae = pd.read_parquet(base / "adverse_events.parquet")
-    enr = pd.read_parquet(base / "enrollment.parquet")
+    rx = pd.read_parquet(base / f"rx_fills{SUFFIX}.parquet")
+    ae = pd.read_parquet(base / f"adverse_events{SUFFIX}.parquet")
+    enr = pd.read_parquet(base / f"enrollment{SUFFIX}.parquet")
     log(f"Loaded rx_fills: {len(rx):,} rows | adverse_events: {len(ae):,} rows | enrollment: {len(enr):,} rows")
 
     # ---------- Prepare Rx intervals ----------
@@ -160,6 +197,32 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     if spells.empty:
         log("No spells detected. Exiting.")
         return
+    
+    # ---------- Only keep spells with opioid ----------
+    if OPIOID_FLAG:
+        log("Flagging spells that contain at least one opioid NDC...")
+        opioid_df = pd.read_csv("opioid_ndc11_list.csv", dtype=str)
+        opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
+
+        # Merge drug fills to identify if each spell contains any opioid
+        rx["filldate"] = pd.to_datetime(rx["filldate"]).dt.date  # ensure consistent type
+        rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
+
+        spell_flags = []
+        for _, s in spells.iterrows():
+            m = s.MemberUID
+            # restrict to fills for that member within the spell window
+            rx_sub = rx[
+                (rx["MemberUID"] == m)
+                & (rx["filldate"] >= s.entry_date)
+                & (rx["filldate"] <= s.extended_exit_date)
+            ]
+            has_opioid = rx_sub["is_opioid"].any()
+            spell_flags.append(has_opioid)
+
+        spells["has_opioid_drug"] = spell_flags
+        spells = spells[spells["has_opioid_drug"]]
+        log(f"Spells with ≥1 opioid drug: {len(spells):,}")
 
     # Enrollment censoring: ensure the spell is within enrollment periods
     log("Applying enrollment censoring...")
@@ -235,9 +298,9 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
 
     # ---------- Save outputs ----------
     log("Saving output files...")
-    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days.parquet", index=False)
-    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days.csv", index=False)
-    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days.parquet'}")
+    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days{SUFFIX}.parquet", index=False)
+    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days{SUFFIX}.csv", index=False)
+    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days{SUFFIX}.parquet'}")
 
 
 if __name__ == "__main__":
