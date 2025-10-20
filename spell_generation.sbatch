@@ -18,7 +18,7 @@ source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 # Run the Python script
 echo "[INFO] Starting 21-day extension run..."
 python spell_generation.py \
-    --suffix "_sample1M" \
+    --output_suffix "_sample1M" \
     --opioid_flag True \
     --min_concurrent 3 \
     --extend_days 21
@@ -29,3 +29,11 @@ python spell_generation.py \
 #     --opioid_flag True \
 #     --min_concurrent 3 \
 #     --extend_days 15
+
+
+# python spell_generation.py \
+#     --output_suffix "_sample1M_7day" \
+#     --opioid_flag True \
+#     --min_concurrent 3 \
+#     --extend_days 21 \
+#     --min_spell_len 28
