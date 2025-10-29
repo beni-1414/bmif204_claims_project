@@ -207,8 +207,37 @@ def process_member(item):
         })
     return out, drug_changes_local
 
+def init_worker(enr_groups, spell_groups):
+    global ENR_GROUPS, SPELL_GROUPS
+    ENR_GROUPS = enr_groups
+    SPELL_GROUPS = spell_groups
 
-def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
+def censor_member(args):
+    mid, g = args
+    spell_ints = SPELL_GROUPS.get(mid, []) # spell_ints rows are (spell_id, start, end)
+    if g.empty or len(spell_ints) == 0:
+        return g.iloc[0:0]
+
+    dates = g["date"].values
+
+    # pull spell start/end arrays sorted by start
+    starts = np.array([row[1] for row in spell_ints])
+    starts = starts - np.timedelta64(60, 'D')
+    ends   = np.array([row[2] for row in spell_ints])
+
+    # ensure sorted by starts (cheap even if already sorted)
+    order = np.argsort(starts)
+    starts, ends = starts[order], ends[order]
+
+    # For each date, find the spell with the greatest start <= date
+    idx = np.searchsorted(starts, dates, side="right") - 1
+
+    # Valid if idx in range AND date <= corresponding end
+    keep = (idx >= 0) & (dates <= ends[idx])
+
+    return g.loc[keep]
+
+def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/"):
     base = Path(scratch_dir)
 
     # ---------- Load data ----------
@@ -329,51 +358,40 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project/"):
     spells = pd.DataFrame(valid_spells)
 
     # ---------- Apply enrollment + washout censoring to drug_changes ----------
-    log("Applying censoring to drug change events (vectorized)...")
+    log("Applying censoring to drug change events (chunked, memory-safe)...")
 
     if not drug_changes.empty:
-        drug_changes["date"] = pd.to_datetime(drug_changes["date"]).dt.date
-        enr["effectivedate"] = pd.to_datetime(enr["effectivedate"]).dt.date
-        enr["terminationdate"] = pd.to_datetime(enr["terminationdate"]).dt.date
 
-        # --- Enrollment censoring (vectorized join instead of loops) ---
-        merged_enr = pd.merge(
-            drug_changes,
-            enr[["MemberUID", "effectivedate", "terminationdate"]],
-            on="MemberUID",
-            how="left"
-        )
+        # Build group dicts once
+        enr_groups = {m: g[["effectivedate", "terminationdate"]].values for m, g in enr.groupby("MemberUID")}
+        spell_groups = {m: g[["spell_id", "entry_date", "extended_exit_date"]].values for m, g in spells.groupby("MemberUID")}
 
-        mask_enr = (merged_enr["date"] >= merged_enr["effectivedate"]) & (
-            merged_enr["date"] <= merged_enr["terminationdate"]
-        )
+        members_iter = list(drug_changes.groupby("MemberUID"))
+        nproc = min(cpu_count(), 8)  # cap to ~8 for cluster balance
+        log(f"Parallel censoring over {len(members_iter):,} members using {nproc} workers...")
 
-        drug_changes = merged_enr[mask_enr][
-            ["MemberUID", "date", "change_type", "ndc11code"]
-        ].drop_duplicates()
+        log(f"Launching parallel pool with {nproc} workers...")
+        with Pool(processes=nproc, initializer=init_worker, initargs=(enr_groups, spell_groups)) as pool:
+            results = []
+            total = len(members_iter)
+            log(f"Processing {total:,} members in parallel...")
 
-        # --- Spell window censoring (also vectorized join) ---
-        spells["entry_date"] = pd.to_datetime(spells["entry_date"]).dt.date
-        spells["extended_exit_date"] = pd.to_datetime(spells["extended_exit_date"]).dt.date
+            for i, chunk in enumerate(
+                pool.imap_unordered(
+                    censor_member,
+                    [(mid, g) for mid, g in members_iter],
+                    chunksize=500
+                ),
+                1
+            ):
+                results.append(chunk)
+                if i % 5000 == 0 or i == total:
+                    log(f"  → Processed {i:,}/{total:,} members ({i/total:.1%})")
 
-        merged_spell = pd.merge(
-            drug_changes,
-            spells[["MemberUID", "spell_id", "entry_date", "extended_exit_date"]],
-            on="MemberUID",
-            how="left"
-        )
-
-        mask_spell = (merged_spell["date"] >= merged_spell["entry_date"]) & (
-            merged_spell["date"] <= merged_spell["extended_exit_date"]
-        )
-
-        drug_changes = merged_spell[mask_spell][
-            ["MemberUID", "spell_id", "date", "change_type", "ndc11code"]
-        ].drop_duplicates()
-
+        drug_changes = pd.concat(results, ignore_index=True)
         log(f"Drug change events after censoring: {len(drug_changes):,}")
     else:
-        log("No drug change events found, skipping censoring.")
+        log("No drug change events to censor.")
 
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events...")
