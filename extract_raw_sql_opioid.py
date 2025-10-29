@@ -18,7 +18,7 @@ conn = pyodbc.connect(conn_str)
 # ------------------------------
 # PATH CONFIG
 # ------------------------------
-SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project/")
+SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")
 PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
 (PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
 
@@ -65,33 +65,29 @@ opioid_where = " OR ".join(opioid_in_clauses)
 # CTE BLOCK
 # ------------------------------
 base_cte_create = f"""
+WITH member_drugs AS (
+    SELECT 
+        r.MemberUID,
+        r.ndc11code,
+        MIN(r.filldate) AS first_fill_date
+    FROM [RxClaim] r
+    WHERE r.supplydayscount IS NOT NULL
+    GROUP BY r.MemberUID, r.ndc11code
+),
+opioid_flags AS (
+    SELECT 
+        m.MemberUID,
+        MAX(CASE WHEN {opioid_where} THEN 1 ELSE 0 END) AS has_opioid,
+        COUNT(DISTINCT m.ndc11code) AS total_drugs
+    FROM member_drugs m
+    GROUP BY m.MemberUID
+)
 SELECT 
     o.MemberUID
-INTO #eligible_members   -- creates temp table in this connection
-FROM (
-    WITH member_drugs AS (
-        SELECT 
-            r.MemberUID,
-            r.ndc11code,
-            MIN(r.filldate) AS first_fill_date
-        FROM [RxClaim] r
-        WHERE r.supplydayscount IS NOT NULL
-        GROUP BY r.MemberUID, r.ndc11code
-    ),
-    opioid_flags AS (
-        SELECT 
-            m.MemberUID,
-            MAX(CASE WHEN {opioid_where} THEN 1 ELSE 0 END) AS has_opioid,
-            COUNT(DISTINCT m.ndc11code) AS total_drugs
-        FROM member_drugs m
-        GROUP BY m.MemberUID
-    )
-    SELECT 
-        o.MemberUID
-    FROM opioid_flags o
-    WHERE o.has_opioid = 1
-      AND o.total_drugs >= 3
-) o;
+INTO #eligible_members
+FROM opioid_flags o
+WHERE o.has_opioid = 1
+  AND o.total_drugs >= 3;
 """
 
 
