@@ -241,9 +241,10 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     base = Path(scratch_dir)
 
     # ---------- Load data ----------
-    global INPUT_SUFFIX
+    global INPUT_SUFFIX, OUTPUT_SUFFIX
     if OPIOID_FLAG:
         INPUT_SUFFIX = "_opioid" + INPUT_SUFFIX
+        OUTPUT_SUFFIX = "_opioid" + OUTPUT_SUFFIX
     log(f"Loading Parquet files from: {base}")
     rx = pd.read_parquet(base / f"rx_fills{INPUT_SUFFIX}.parquet")
     ae = pd.read_parquet(base / f"adverse_events{INPUT_SUFFIX}.parquet")
@@ -256,7 +257,7 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     rx["start"] = rx["filldate"]
     rx["end"] = rx["filldate"] + pd.to_timedelta(rx["supplydayscount"] - 1, unit="D")
 
-        # ---------- Build spells (parallelized) ----------
+    # ---------- Build spells (parallelized) ----------
     log("Detecting polypharmacy spells per member (parallel)...")
     n_members = rx["MemberUID"].nunique()
     log(f"Unique members in Rx: {n_members:,}")
@@ -429,11 +430,12 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # ---------- Save outputs ----------
     log("Saving output files...")
-    spells.to_parquet(base / f"spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet", index=False)
-    drug_changes.to_parquet(base / f"drug_changes_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet", index=False)
-    spells.head(500).to_csv(base / f"spells_debug_sample_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.csv", index=False)
-    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet'}")
-    log(f"✅ Wrote {len(drug_changes):,} drug change events to {base/f'drug_changes_{EXTEND_DAYS}_days{OUTPUT_SUFFIX}.parquet'}")
+    spells.to_parquet(base / f"spells_with_labels_{OUTPUT_SUFFIX}.parquet", index=False)
+    drug_changes.to_parquet(base / f"drug_changes_{OUTPUT_SUFFIX}.parquet", index=False)
+    # spells.head(500).to_csv(base / f"spells_debug_sample_{OUTPUT_SUFFIX}.csv", index=False)
+    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{OUTPUT_SUFFIX}.parquet'}")
+    if not drug_changes.empty:
+        log(f"✅ Wrote {len(drug_changes):,} drug change events to {base/f'drug_changes_{OUTPUT_SUFFIX}.parquet'}")
 
 
 if __name__ == "__main__":
