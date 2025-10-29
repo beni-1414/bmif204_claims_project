@@ -17,7 +17,7 @@ python spell_generation.py \
     --input_suffix "_sample1M" \
     --opioid_flag True \
     --min_concurrent 3 \
-    --extend_days 21 \
+    --grace_period 21 \
     --min_spell_len 51
 """
 
@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 import argparse
 from multiprocessing import Pool, cpu_count
 from itertools import islice
+import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
@@ -39,10 +40,10 @@ def parse_args():
                         default=False, help="If True, restrict to opioid spells only")
     parser.add_argument("--min_concurrent", type=int, default=3,
                         help="Minimum number of concurrent drugs defining a spell")
-    parser.add_argument("--extend_days", type=int, default=21,
+    parser.add_argument("--grace_period", type=int, default=21,
                         help="Extension period (days) after last fill below threshold")
     parser.add_argument("--min_spell_len", type=int, default=None,
-                        help="Minimum total spell length (if not provided, 30 + extend_days)")
+                        help="Minimum total spell length (if not provided, 30)")
 
     return parser.parse_args()
 
@@ -54,8 +55,8 @@ INPUT_SUFFIX = args.input_suffix
 OUTPUT_SUFFIX = args.output_suffix
 OPIOID_FLAG = args.opioid_flag
 MIN_CONCURRENT = args.min_concurrent
-EXTEND_DAYS = args.extend_days
-MIN_SPELL_LEN = args.min_spell_len or (30 + EXTEND_DAYS)
+GRACE_PERIOD = args.grace_period
+MIN_SPELL_LEN = args.min_spell_len or 30
 
 
 def log(msg: str):
@@ -77,7 +78,7 @@ def build_spells_for_member(df):
         cur_start, cur_end = intervals[0]
         for s, e in intervals[1:]:
             # Merge intervals if they overlap or are consecutive
-            if s <= cur_end + timedelta(days=1):
+            if s <= cur_end + timedelta(days=1 + GRACE_PERIOD):
                 cur_end = max(cur_end, e)
             else:
                 merged.append((cur_start, cur_end))
@@ -147,11 +148,11 @@ def build_spells_for_member(df):
                     low_start = day
                     below_days = 0
                 below_days += seg_len
-                if below_days >= EXTEND_DAYS:
+                if below_days >= GRACE_PERIOD:
                     raw_exit = low_start - timedelta(days=1)
-                    extended_exit = raw_exit + timedelta(days=EXTEND_DAYS)
+                    extended_exit = raw_exit + timedelta(days=GRACE_PERIOD)
                     # Only keep spells of sufficient length
-                    if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN:
+                    if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN + GRACE_PERIOD:
                         spells.append((entry, raw_exit, extended_exit))
                     in_spell = False
                     entry = None
@@ -167,8 +168,8 @@ def build_spells_for_member(df):
     # Handle spell that runs to end of data
     if in_spell:
         raw_exit = compressed[-1][0]
-        extended_exit = raw_exit + timedelta(days=EXTEND_DAYS)
-        if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN:
+        extended_exit = raw_exit + timedelta(days=GRACE_PERIOD)
+        if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN + GRACE_PERIOD:
             spells.append((entry, raw_exit, extended_exit))
 
     return spells, drug_changes_local
