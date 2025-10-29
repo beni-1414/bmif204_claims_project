@@ -399,32 +399,35 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     ae["event_date"] = pd.to_datetime(ae["event_date"]).dt.date
     ae_groups = {m: g for m, g in ae.groupby("MemberUID", sort=False)}
 
-    had_ae, first_ae_date, ae_codes = [], [], []
+    had_ae, first_ae_date, ae_codes, first_ae_codes = [], [], [], []
     for idx, r in spells.iterrows():
         g = ae_groups.get(r.MemberUID)
         if g is None:
-            had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
+            had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([]); first_ae_codes.append(pd.NaT)
             continue
 
         mask_in_window = (g["event_date"] >= r.entry_date) & (g["event_date"] <= r.followup_end_date)
         sub = g[mask_in_window]
 
         if sub.empty:
-            had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
+            had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([]); first_ae_codes.append(pd.NaT)
         else:
             # Exclude AE codes already seen before this spell
             prior_events = g[g["event_date"] < r.entry_date]["CodeValue"].unique()
             new_codes = [c for c in sub["CodeValue"].unique() if c not in prior_events]
 
             if len(new_codes) == 0:
-                had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([])
+                had_ae.append(False); first_ae_date.append(pd.NaT); ae_codes.append([]); first_ae_codes.append(pd.NaT)
             else:
+                first_ae_code = sub[sub["CodeValue"].isin(new_codes)].sort_values("event_date").iloc[0]["CodeValue"]
+                first_ae_codes.append(first_ae_code)
                 had_ae.append(True)
                 first_ae_date.append(sub[sub["CodeValue"].isin(new_codes)]["event_date"].min())
                 ae_codes.append(new_codes)
 
     spells["had_ae"] = had_ae
     spells["first_ae_date"] = first_ae_date
+    spells["first_ae_code"] = first_ae_codes
     spells["ae_codes"] = ae_codes
     log("AE labeling completed.")
 
