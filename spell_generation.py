@@ -66,12 +66,12 @@ def log(msg: str):
 
 def build_spells_for_member(df):
     """Given all Rx fills for one member, return a list of (entry, raw_exit, extended_exit)."""
-    # List to hold change points (date, +1 for start, -1 for end)
     cps = []
-    # Group fills by drug code and merge overlapping intervals for each drug
-    drug_changes_local = []  # track (MemberUID, date, change, drug)
+    drug_intervals = {}  # 🧩 store merged intervals per drug for later overlap checking
+    member_id = df["MemberUID"].iloc[0]
 
-    for ndc, g in df.groupby("ndc11code"):
+    # --- 1. Merge overlapping intervals per drug ---
+    for ndc, g in df.groupby("ndc11code"): # Need to groupby rxnorm ingredient once we have the column
         intervals = g[["start", "end"]].values
         intervals = intervals[intervals[:, 0].argsort()]
         merged = []
@@ -84,27 +84,17 @@ def build_spells_for_member(df):
                 merged.append((cur_start, cur_end))
                 cur_start, cur_end = s, e
         merged.append((cur_start, cur_end))
+        drug_intervals[ndc] = merged  # save
 
         # Mark start (+1) and end (-1) of each merged interval
         for s, e in merged:
             cps.append((s, +1))
             cps.append((e + timedelta(days=1), -1))
-            drug_changes_local.append({
-                "MemberUID": df["MemberUID"].iloc[0],
-                "date": s,
-                "change_type": "add",
-                "ndc11code": ndc
-            })
-            drug_changes_local.append({
-                "MemberUID": df["MemberUID"].iloc[0],
-                "date": e + timedelta(days=1),
-                "change_type": "drop",
-                "ndc11code": ndc
-            })
-    if not cps:
-        return []
 
-    # Sort change points by date
+    if not cps:
+        return [], []
+
+    # --- 2. Compress change points ---
     cps.sort()
     compressed = []
     day, delta = cps[0]
@@ -117,7 +107,7 @@ def build_spells_for_member(df):
             day, delta = d, dl
     compressed.append((day, delta))
 
-    # Detect spells where concurrent drugs >= MIN_CONCURRENT
+    # --- 3. Detect spells ---
     spells = []
     count = 0
     in_spell = False
@@ -171,6 +161,34 @@ def build_spells_for_member(df):
         extended_exit = raw_exit + timedelta(days=GRACE_PERIOD)
         if (extended_exit - entry).days + 1 >= MIN_SPELL_LEN + GRACE_PERIOD:
             spells.append((entry, raw_exit, extended_exit))
+
+    # --- 4. 🧠 Create drug_changes_local only for drugs active during spells ---
+    drug_changes_local = []
+    if spells:
+        for spell_id, (entry, raw_exit, ext) in enumerate(spells, start=1):
+            for ndc, merged in drug_intervals.items():
+                entry = entry - timedelta(days=60)  # buffer to catch prior adds
+                for s, e in merged:
+                    # skip if no overlap
+                    if e < entry or s > ext:
+                        continue
+                    # record only if overlap within the spell
+                    if entry <= s <= ext:
+                        drug_changes_local.append({
+                            "MemberUID": member_id,
+                            "spell_id": member_id * 1000 + spell_id,
+                            "date": s,
+                            "change_type": "add",
+                            "ndc11code": ndc
+                        })
+                    if entry <= (e + timedelta(days=1)) <= ext:
+                        drug_changes_local.append({
+                            "MemberUID": member_id,
+                            "spell_id": spell_id * 1000 + spell_id,
+                            "date": e + timedelta(days=1),
+                            "change_type": "drop",
+                            "ndc11code": ndc
+                        })
 
     return spells, drug_changes_local
 
