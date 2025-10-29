@@ -207,33 +207,37 @@ def process_member(item):
         })
     return out, drug_changes_local
 
-def init_worker(enr_groups, spell_groups):
-    global ENR_GROUPS, SPELL_GROUPS
-    ENR_GROUPS = enr_groups
-    SPELL_GROUPS = spell_groups
+def init_worker(_spell_groups, lookback_days=60):
+    global SPELL_GROUPS, LOOKBACK
+    SPELL_GROUPS = _spell_groups
+    LOOKBACK = np.timedelta64(lookback_days, "D")
 
 def censor_member(args):
     mid, g = args
-    spell_ints = SPELL_GROUPS.get(mid, []) # spell_ints rows are (spell_id, start, end)
-    if g.empty or len(spell_ints) == 0:
+    sp = SPELL_GROUPS.get(mid)
+    if g.empty or sp is None or len(sp) == 0:
         return g.iloc[0:0]
 
-    dates = g["date"].values
+    # sp is shape (k, 2): [:,0]=start, [:,1]=end, already datetime64[ns]
+    starts = sp[:, 0] - LOOKBACK   # 60-day lookback
+    ends   = sp[:, 1]
 
-    # pull spell start/end arrays sorted by start
-    starts = np.array([row[1] for row in spell_ints])
-    starts = starts - np.timedelta64(60, 'D')
-    ends   = np.array([row[2] for row in spell_ints])
-
-    # ensure sorted by starts (cheap even if already sorted)
+    # ensure starts sorted (cheap even if pre-sorted)
     order = np.argsort(starts)
     starts, ends = starts[order], ends[order]
 
-    # For each date, find the spell with the greatest start <= date
-    idx = np.searchsorted(starts, dates, side="right") - 1
+    # dates already datetime64[ns] from the global conversion
+    dates = g["date"].to_numpy(dtype="datetime64[ns]")
 
-    # Valid if idx in range AND date <= corresponding end
-    keep = (idx >= 0) & (dates <= ends[idx])
+    valid = ~np.isnat(dates)
+    if not valid.any():
+        return g.iloc[0:0]
+
+    idx = np.searchsorted(starts, dates[valid], side="right") - 1
+    keep_valid = (idx >= 0) & (dates[valid] <= ends[idx])
+
+    keep = np.zeros(len(dates), dtype=bool)
+    keep[np.flatnonzero(valid)] = keep_valid
 
     return g.loc[keep]
 
@@ -285,6 +289,7 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     spells = pd.DataFrame(all_spells)
     drug_changes = pd.DataFrame(all_changes)
+    drug_changes["date"] = pd.to_datetime(drug_changes["date"], errors="coerce")
     log(f"Detected total spells: {len(spells):,}")
     log(f"Captured total drug change events: {len(drug_changes):,}")
     if spells.empty:
@@ -364,32 +369,55 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     if not drug_changes.empty:
 
         # Build group dicts once
-        enr_groups = {m: g[["effectivedate", "terminationdate"]].values for m, g in enr.groupby("MemberUID")}
-        spell_groups = {m: g[["spell_id", "entry_date", "extended_exit_date"]].values for m, g in spells.groupby("MemberUID")}
+        spell_groups = {}
+        for mid, g in spells.groupby("MemberUID", sort=False):
+            starts = pd.to_datetime(g["entry_date"], errors="coerce").to_numpy(dtype="datetime64[ns]")
+            ends   = pd.to_datetime(g["extended_exit_date"], errors="coerce").to_numpy(dtype="datetime64[ns]")
+            spell_groups[mid] = np.column_stack([starts, ends])  # shape (k, 2)
 
-        members_iter = list(drug_changes.groupby("MemberUID"))
-        nproc = min(cpu_count(), 8)  # cap to ~8 for cluster balance
-        log(f"Parallel censoring over {len(members_iter):,} members using {nproc} workers...")
+        # lazy generator instead of list(...)
+        def iter_member_groups(df):
+            for mid, g in df.groupby("MemberUID", sort=False):
+                yield (mid, g)
+
+        total_members = drug_changes["MemberUID"].nunique()
+        nproc = min(cpu_count(), 4)  # start small; raise if stable
+        log(f"Parallel censoring over {total_members:,} members using {nproc} workers...")
+
+        processed = 0
+        out_chunks = []   # small buffer of dataframes
+        big_chunks = []   # occasional larger concatenations to reduce list length
 
         log(f"Launching parallel pool with {nproc} workers...")
-        with Pool(processes=nproc, initializer=init_worker, initargs=(enr_groups, spell_groups)) as pool:
-            results = []
-            total = len(members_iter)
-            log(f"Processing {total:,} members in parallel...")
+        with Pool(processes=nproc,
+                initializer=init_worker,
+                initargs=(spell_groups, 60),
+                maxtasksperchild=200) as pool:
 
-            for i, chunk in enumerate(
-                pool.imap_unordered(
+            for chunk in pool.imap_unordered(
                     censor_member,
-                    [(mid, g) for mid, g in members_iter],
-                    chunksize=500
-                ),
-                1
-            ):
-                results.append(chunk)
-                if i % 5000 == 0 or i == total:
-                    log(f"  → Processed {i:,}/{total:,} members ({i/total:.1%})")
+                    iter_member_groups(drug_changes),
+                    chunksize=100):
+                processed += 1
 
-        drug_changes = pd.concat(results, ignore_index=True)
+                if chunk is not None and not chunk.empty:
+                    out_chunks.append(chunk)
+
+                # Periodically compact the small buffer to cap memory growth
+                if len(out_chunks) >= 1000:
+                    big_chunks.append(pd.concat(out_chunks, ignore_index=True))
+                    out_chunks.clear()
+
+                if processed % 5000 == 0 or processed == total_members:
+                    log(f"  → Processed {processed:,}/{total_members:,} members ({processed/total_members:.1%})")
+
+        # Final combine: (at most a few big frames + small tail)
+        if big_chunks:
+            big_chunks.append(pd.concat(out_chunks, ignore_index=True))
+            drug_changes = pd.concat(big_chunks, ignore_index=True)
+        else:
+            drug_changes = pd.concat(out_chunks, ignore_index=True) if out_chunks else drug_changes.iloc[0:0]
+
         log(f"Drug change events after censoring: {len(drug_changes):,}")
     else:
         log("No drug change events to censor.")
