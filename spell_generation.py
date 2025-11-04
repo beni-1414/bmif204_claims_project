@@ -184,7 +184,7 @@ def build_spells_for_member(df):
                     if entry <= (e + timedelta(days=1)) <= ext:
                         drug_changes_local.append({
                             "MemberUID": member_id,
-                            "spell_id": spell_id * 1000 + spell_id,
+                            "spell_id": member_id * 1000 + spell_id,
                             "date": e + timedelta(days=1),
                             "change_type": "drop",
                             "ndc11code": ndc
