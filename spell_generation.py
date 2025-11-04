@@ -199,7 +199,7 @@ def process_member(item):
     for sid, (entry, raw_exit, extended) in enumerate(mem_spells, 1):
         out.append({
             "MemberUID": mid,
-            "spell_id": sid,
+            "spell_id": mid * 1000 + sid,
             "entry_date": entry,
             "raw_exit_date": raw_exit,
             "extended_exit_date": extended,
