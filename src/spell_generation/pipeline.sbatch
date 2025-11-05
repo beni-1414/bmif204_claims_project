@@ -25,3 +25,6 @@ python src/spell_generation/spell_generation.py \
     --min_concurrent 3 \
     --grace_period 15 \
     --min_spell_len 7
+
+python src/spell_generation/split_spells_from_changes.py \
+    --suffix "_opioid_sample1M_grace15_minspell7_ae_censoring"
