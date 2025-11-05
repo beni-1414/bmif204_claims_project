@@ -37,10 +37,23 @@ from __future__ import annotations
 from typing import List, Optional
 
 import pandas as pd
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
+
+    parser.add_argument("--suffix", type=str, default="_opioid_sample1M_grace15_minspell7",
+                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
+
+
+    args = parser.parse_args()
+    return args
+
 
 # === Hard-coded file paths ===
+args = parse_args()
 BASE_PATH = "/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/"
-SUFFIX = "_opioid_sample1M_grace15_minspell7"
+SUFFIX = args.suffix
 SPELLS_PATH = BASE_PATH + "spells_with_labels" + SUFFIX + ".parquet"
 CHANGES_PATH = BASE_PATH + "drug_changes" + SUFFIX + ".parquet"
 OUT_PATH = BASE_PATH + "split_spells" + SUFFIX + ".parquet"
