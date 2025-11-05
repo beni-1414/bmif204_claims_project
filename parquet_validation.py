@@ -2,14 +2,17 @@ from pathlib import Path
 import pandas as pd
 
 # Paths to the parquet files you expect to generate
+SUFFIX = "_opioid_sample1M_grace15_minspell7_ae_censoring"
 OUT_FILES = [
     # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/rx_fills_sample1M.parquet"),
     # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/adverse_events.parquet"),
     # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/demographics.parquet"),
     # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/enrollment.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/spells_with_labels_opioid_sample1M_grace15_minspell7.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/drug_changes_opioid_sample1M_grace15_minspell7.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/split_spells_opioid_sample1M_grace15_minspell7.parquet")
+    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/spells_with_labels{SUFFIX}.parquet"),
+    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/drug_changes{SUFFIX}.parquet"),
+    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/split_spells{SUFFIX}.parquet"),
+    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/icd10_codes_from_spells{SUFFIX}.parquet"),
+    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/icd10_codes_from_spells{SUFFIX}_clustered.parquet"),
 ]
 
 def test_parquet_file(path: Path):
