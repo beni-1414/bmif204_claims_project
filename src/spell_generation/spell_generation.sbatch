@@ -23,7 +23,7 @@ source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 #     --min_concurrent 3 \
 #     --grace_period 21
 
-echo "[INFO] Starting 15-day extension run..."
+echo "[INFO] Starting final run..."
 python spell_generation.py \
     --input_suffix "_sample1M" \
     --output_suffix "_sample1M_grace15_minspell7" \
