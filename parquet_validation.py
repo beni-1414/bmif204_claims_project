@@ -3,11 +3,13 @@ import pandas as pd
 
 # Paths to the parquet files you expect to generate
 OUT_FILES = [
-    Path("/n/scratch/users/b/bef299/polypharmacy_project/rx_fills.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project/adverse_events.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project/demographics.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project/enrollment.parquet"),
-    Path("/n/scratch/users/b/bef299/polypharmacy_project/spells_with_labels.parquet"),
+    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/rx_fills_sample1M.parquet"),
+    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/adverse_events.parquet"),
+    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/demographics.parquet"),
+    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/enrollment.parquet"),
+    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/spells_with_labels_opioid_sample1M_grace15_minspell7.parquet"),
+    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/drug_changes_opioid_sample1M_grace15_minspell7.parquet"),
+    Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/split_spells_opioid_sample1M_grace15_minspell7.parquet")
 ]
 
 def test_parquet_file(path: Path):
@@ -19,7 +21,7 @@ def test_parquet_file(path: Path):
     try:
         df = pd.read_parquet(path)
         print(f"✅ Successfully read {len(df):,} rows, {len(df.columns)} columns")
-        print(df.head(3))  # preview a few rows
+        print(df.head(20))  # preview a few rows
         return True
     except Exception as e:
         print(f"❌ Failed to read {path}: {e}")
