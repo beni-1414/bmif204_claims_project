@@ -171,7 +171,7 @@ def build_spells_for_member(df):
     if spells:
         for spell_id, (entry, raw_exit, ext) in enumerate(spells, start=1):
             for ndc, merged in drug_intervals.items():
-                entry_with_buffer = entry - timedelta(days=60)  # buffer to catch prior adds
+                entry_with_buffer = entry - timedelta(days=91)  # buffer to catch prior adds (91 captures the majority of supplies)
                 for s, e, is_op in merged:
                     # skip if no overlap
                     if e < entry_with_buffer or s > ext:
