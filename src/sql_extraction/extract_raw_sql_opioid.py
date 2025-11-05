@@ -1,17 +1,27 @@
 import pyodbc
 import pandas as pd
 from pathlib import Path
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
+
+    parser.add_argument("--suffix", type=str, default="_sample1M",
+                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
+    parser.add_argument("--db", type=str, default="InovalonSample1M",
+                        help="Database name to connect to (e.g., 'InovalonSample5M' or 'InovalonSample1M')")
+
+
+    args = parser.parse_args()
+    return args
 
 # ------------------------------
 # DB CONNECTION
 # ------------------------------
-full = False
-if full:
-    suffix = ""
-    conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=Inovalon;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
-else:
-    suffix = "_sample1M"
-    conn_str = 'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database=InovalonSample1M;TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+args = parse_args()
+suffix = args.suffix
+database = args.db
+conn_str = f'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database={database};TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
 
 conn = pyodbc.connect(conn_str)
 
