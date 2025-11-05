@@ -74,6 +74,7 @@ def build_spells_for_member(df):
     for ndc, g in df.groupby("ndc11code"): # Need to groupby rxnorm ingredient once we have the column
         intervals = g[["start", "end"]].values
         intervals = intervals[intervals[:, 0].argsort()]
+        is_op = int(g["is_opioid"].iloc[0])  # NEW: opioid flag for this drug/ndc
         merged = []
         cur_start, cur_end = intervals[0]
         for s, e in intervals[1:]:
@@ -81,15 +82,15 @@ def build_spells_for_member(df):
             if s <= cur_end + timedelta(days=1 + GRACE_PERIOD):
                 cur_end = max(cur_end, e)
             else:
-                merged.append((cur_start, cur_end))
+                merged.append((cur_start, cur_end, is_op))  # NEW: carry opioid flag
                 cur_start, cur_end = s, e
-        merged.append((cur_start, cur_end))
+        merged.append((cur_start, cur_end, is_op))  # NEW: carry opioid flag
         drug_intervals[ndc] = merged  # save
 
         # Mark start (+1) and end (-1) of each merged interval
-        for s, e in merged:
-            cps.append((s, +1))
-            cps.append((e + timedelta(days=1), -1))
+        for s, e, is_op in merged:
+            cps.append((s, +1, is_op))
+            cps.append((e + timedelta(days=1), -1, -is_op))
 
     if not cps:
         return [], []
@@ -97,26 +98,28 @@ def build_spells_for_member(df):
     # --- 2. Compress change points ---
     cps.sort()
     compressed = []
-    day, delta = cps[0]
+    day, delta, is_op = cps[0]
     # Compress change points for same day
-    for d, dl in cps[1:]:
+    for d, dl, iop in cps[1:]:
         if d == day:
             delta += dl
+            is_op += iop
         else:
-            compressed.append((day, delta))
-            day, delta = d, dl
-    compressed.append((day, delta))
+            compressed.append((day, delta, is_op))
+            day, delta, is_op = d, dl, iop
+    compressed.append((day, delta, is_op))
 
     # --- 3. Detect spells ---
     spells = []
     count = 0
+    count_op = 0
     in_spell = False
     entry = None
     below_days = 0
     low_start = None
 
     for i in range(len(compressed)):
-        day, delta = compressed[i]
+        day, delta, is_op = compressed[i]
         # Calculate segment length to next change point
         if i < len(compressed) - 1:
             next_day = compressed[i + 1][0]
@@ -125,7 +128,7 @@ def build_spells_for_member(df):
             seg_len = 1  # tail
 
         # Start spell if concurrent count threshold met
-        if not in_spell and count >= MIN_CONCURRENT:
+        if not in_spell and count >= MIN_CONCURRENT and count_op > 0:
             in_spell = True
             entry = day
             below_days = 0
@@ -133,7 +136,7 @@ def build_spells_for_member(df):
 
         if in_spell:
             # Track days below threshold to determine spell exit
-            if count < MIN_CONCURRENT:
+            if count < MIN_CONCURRENT or count_op == 0:
                 if low_start is None:
                     low_start = day
                     below_days = 0
@@ -154,6 +157,7 @@ def build_spells_for_member(df):
 
         # Update concurrent drug count
         count += delta
+        count_op += is_op
 
     # Handle spell that runs to end of data
     if in_spell:
@@ -167,27 +171,29 @@ def build_spells_for_member(df):
     if spells:
         for spell_id, (entry, raw_exit, ext) in enumerate(spells, start=1):
             for ndc, merged in drug_intervals.items():
-                entry = entry - timedelta(days=60)  # buffer to catch prior adds
-                for s, e in merged:
+                entry_with_buffer = entry - timedelta(days=60)  # buffer to catch prior adds
+                for s, e, is_op in merged:
                     # skip if no overlap
-                    if e < entry or s > ext:
+                    if e < entry_with_buffer or s > ext:
                         continue
                     # record only if overlap within the spell
-                    if entry <= s <= ext:
+                    if entry_with_buffer <= s <= ext:
                         drug_changes_local.append({
                             "MemberUID": member_id,
                             "spell_id": member_id * 1000 + spell_id,
                             "date": s,
                             "change_type": "add",
-                            "ndc11code": ndc
+                            "ndc11code": ndc,
+                            "is_op": is_op
                         })
-                    if entry <= (e + timedelta(days=1)) <= ext:
+                    if entry_with_buffer <= (e + timedelta(days=1)) <= ext:
                         drug_changes_local.append({
                             "MemberUID": member_id,
                             "spell_id": member_id * 1000 + spell_id,
                             "date": e + timedelta(days=1),
                             "change_type": "drop",
-                            "ndc11code": ndc
+                            "ndc11code": ndc,
+                            "is_op": is_op
                         })
 
     return spells, drug_changes_local
@@ -266,6 +272,12 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     n_members = rx["MemberUID"].nunique()
     log(f"Unique members in Rx: {n_members:,}")
 
+    opioid_df = pd.read_csv("opioid_ndc11_list.csv", dtype=str)
+    opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
+
+    # Tag opioid fills once
+    rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
+
     members_iter = list(rx.groupby("MemberUID", sort=False))
     nproc = min(cpu_count(), 8)  # cap to 8 for cluster jobs
 
@@ -295,35 +307,6 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     if spells.empty:
         log("No spells detected. Exiting.")
         return
-    
-    # ---------- Only keep spells with opioid ----------
-    if OPIOID_FLAG:
-        log("Flagging spells that contain at least one opioid NDC (optimized)...")
-
-        opioid_df = pd.read_csv("opioid_ndc11_list.csv", dtype=str)
-        opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
-
-        # Tag opioid fills once
-        rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
-        rx = rx[rx["is_opioid"]]  # keep only opioid fills (reduces data a lot)
-
-        # Expand each spell into one row per opioid fill overlap
-        log("Joining spells with opioid fills...")
-        merged = spells.merge(
-            rx[["MemberUID", "filldate"]],
-            on="MemberUID",
-            how="left"
-        )
-
-        # Keep only overlaps between fill date and spell window
-        mask = (merged["filldate"] >= merged["entry_date"]) & (merged["filldate"] <= merged["extended_exit_date"])
-        merged = merged[mask]
-
-        # Keep unique spells that had any opioid overlap
-        opioid_spell_ids = merged[["MemberUID", "spell_id"]].drop_duplicates()
-
-        log(f"Spells with opioid overlap: {len(opioid_spell_ids):,} / {len(spells):,}")
-        spells = spells.merge(opioid_spell_ids, on=["MemberUID", "spell_id"], how="inner")
 
     # Enrollment censoring: ensure the spell is within enrollment periods
     log("Applying enrollment censoring...")
