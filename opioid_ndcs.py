@@ -67,9 +67,9 @@ print(f"Found {len(unique_opioids)} unique opioid NDC11s.")
 print("Example:", [r["ndc11"] for r in unique_opioids[:10]])
 
 # --- STEP 7: Save to CSV (optional) ---
-with open("opioid_ndc11_list.csv", "w", newline="", encoding="utf-8") as f:
+with open("data/opioid_ndc11_list.csv", "w", newline="", encoding="utf-8") as f:
     writer = csv.DictWriter(f, fieldnames=["ndc11", "brand_name", "strength", "route", "labeler_name"])
     writer.writeheader()
     writer.writerows(unique_opioids)
 
-print("Saved to opioid_ndc11_list.csv")
+print("Saved to data/opioid_ndc11_list.csv")

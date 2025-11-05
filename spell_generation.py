@@ -272,7 +272,7 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     n_members = rx["MemberUID"].nunique()
     log(f"Unique members in Rx: {n_members:,}")
 
-    opioid_df = pd.read_csv("opioid_ndc11_list.csv", dtype=str)
+    opioid_df = pd.read_csv("data/opioid_ndc11_list.csv", dtype=str)
     opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
 
     # Tag opioid fills once
