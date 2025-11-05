@@ -444,12 +444,12 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # ---------- Save outputs ----------
     log("Saving output files...")
-    spells.to_parquet(base / f"spells_with_labels_{OUTPUT_SUFFIX}.parquet", index=False)
-    drug_changes.to_parquet(base / f"drug_changes_{OUTPUT_SUFFIX}.parquet", index=False)
-    # spells.head(500).to_csv(base / f"spells_debug_sample_{OUTPUT_SUFFIX}.csv", index=False)
-    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels_{OUTPUT_SUFFIX}.parquet'}")
+    spells.to_parquet(base / f"spells_with_labels{OUTPUT_SUFFIX}.parquet", index=False)
+    drug_changes.to_parquet(base / f"drug_changes{OUTPUT_SUFFIX}.parquet", index=False)
+    # spells.head(500).to_csv(base / f"spells_debug_sample{OUTPUT_SUFFIX}.csv", index=False)
+    log(f"✅ Wrote {len(spells):,} spells to {base/f'spells_with_labels{OUTPUT_SUFFIX}.parquet'}")
     if not drug_changes.empty:
-        log(f"✅ Wrote {len(drug_changes):,} drug change events to {base/f'drug_changes_{OUTPUT_SUFFIX}.parquet'}")
+        log(f"✅ Wrote {len(drug_changes):,} drug change events to {base/f'drug_changes{OUTPUT_SUFFIX}.parquet'}")
 
 
 if __name__ == "__main__":
