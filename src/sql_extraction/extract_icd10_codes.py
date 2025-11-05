@@ -3,6 +3,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 import pyarrow as pa
 import pyarrow.parquet as pq
+import argparse
 
 def bulk_insert_member_windows(conn, df, batch=50_000):
     """
@@ -27,7 +28,20 @@ def bulk_insert_member_windows(conn, df, batch=50_000):
 # ------------------------------
 full = False
 suffix = "" if full else "_sample1M"
-db = "Inovalon" if full else "InovalonSample1M"
+db = "InovalonSample1M"
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
+
+    parser.add_argument("--suffix", type=str, default="_opioid_sample1M_grace15_minspell7_ae_censoring",
+                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
+
+
+    args = parser.parse_args()
+    return args
+
+args = parse_args()
+SUFFIX = args.suffix
 
 N_BUCKETS = 20               # adjust up/down for batch size (more buckets = smaller batches)
 CHUNKSIZE = 200_000          # rows per fetch; tune for your RAM
@@ -37,8 +51,8 @@ SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/
 PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
 (PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
 
-SPELLS_PATH = SCRATCH_PATH / f"split_spells_opioid{suffix}_grace15_minspell7.parquet"
-OUT_PARQUET = SCRATCH_PATH / f"icd10_codes_from_spells_batched{suffix}.parquet"
+SPELLS_PATH = SCRATCH_PATH / f"split_spells{SUFFIX}.parquet"
+OUT_PARQUET = SCRATCH_PATH / f"icd10_codes_from_spells{SUFFIX}.parquet"
 
 # ------------------------------
 # SQL CONNECT (SQLAlchemy, single connection)
