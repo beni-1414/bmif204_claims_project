@@ -19,7 +19,7 @@ else:
 SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project/")
 PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
 (PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
-ICD_CSV_PATH = PROJECT_PATH / "icd10_codes.csv"
+ICD_CSV_PATH = PROJECT_PATH / "data/icd10_codes.csv"
 OUT_RX = SCRATCH_PATH / f"rx_fills{suffix}.parquet"
 OUT_AE = SCRATCH_PATH / f"adverse_events{suffix}.parquet"
 OUT_DEMO = SCRATCH_PATH / f"demographics{suffix}.parquet"

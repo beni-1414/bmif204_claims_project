@@ -30,7 +30,7 @@ OUT_ENROLL = SCRATCH_PATH / f"enrollment_opioid{suffix}.parquet"
 # ------------------------------
 # LOAD ICD10 CSV (for AE filter)
 # ------------------------------
-ICD_CSV_PATH = PROJECT_PATH / "icd10_codes.csv"
+ICD_CSV_PATH = PROJECT_PATH / "data/icd10_codes.csv"
 icd_df = pd.read_csv(ICD_CSV_PATH, dtype=str)
 
 code_conditions = []
@@ -46,7 +46,7 @@ icd_where_clause = " OR ".join(code_conditions)
 # ------------------------------
 # LOAD OPIOID NDC LIST
 # ------------------------------
-opioid_ndcs_path = Path("opioid_ndc11_list.csv")
+opioid_ndcs_path = Path("data/opioid_ndc11_list.csv")
 opioid_df = pd.read_csv(opioid_ndcs_path, dtype=str)
 opioid_ndcs = opioid_df["ndc11"].dropna().unique().tolist()
 
