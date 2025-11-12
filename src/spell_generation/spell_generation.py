@@ -71,7 +71,7 @@ def build_spells_for_member(df):
     member_id = df["MemberUID"].iloc[0]
 
     # --- 1. Merge overlapping intervals per drug ---
-    for ndc, g in df.groupby("ndc11code"): # Need to groupby rxnorm ingredient once we have the column
+    for ndc, g in df.groupby("atc_3_code"): # Need to groupby rxnorm ingredient once we have the column
         intervals = g[["start", "end"]].values
         intervals = intervals[intervals[:, 0].argsort()]
         is_op = int(g["is_opioid"].iloc[0])  # NEW: opioid flag for this drug/ndc
@@ -183,7 +183,7 @@ def build_spells_for_member(df):
                             "spell_id": member_id * 1000 + spell_id,
                             "date": s,
                             "change_type": "add",
-                            "ndc11code": ndc,
+                            "atc_3_code": ndc,
                             "is_op": is_op
                         })
                     if entry_with_buffer <= (e + timedelta(days=1)) <= ext:
@@ -192,7 +192,7 @@ def build_spells_for_member(df):
                             "spell_id": member_id * 1000 + spell_id,
                             "date": e + timedelta(days=1),
                             "change_type": "drop",
-                            "ndc11code": ndc,
+                            "atc_3_code": ndc,
                             "is_op": is_op
                         })
 
