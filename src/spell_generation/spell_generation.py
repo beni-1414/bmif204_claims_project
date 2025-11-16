@@ -120,6 +120,9 @@ def build_spells_for_member(df):
 
     for i in range(len(compressed)):
         day, delta, is_op = compressed[i]
+        count += delta
+        count_op += is_op
+
         # Calculate segment length to next change point
         if i < len(compressed) - 1:
             next_day = compressed[i + 1][0]
@@ -155,10 +158,6 @@ def build_spells_for_member(df):
                 below_days = 0
                 low_start = None
 
-        # Update concurrent drug count
-        count += delta
-        count_op += is_op
-
     # Handle spell that runs to end of data
     if in_spell:
         raw_exit = compressed[-1][0]
@@ -171,7 +170,7 @@ def build_spells_for_member(df):
     if spells:
         for spell_id, (entry, raw_exit, ext) in enumerate(spells, start=1):
             for ndc, merged in drug_intervals.items():
-                entry_with_buffer = entry - timedelta(days=91)  # buffer to catch prior adds (91 captures the majority of supplies)
+                entry_with_buffer = entry - timedelta(days=180)  # buffer to catch prior adds (180 captures the majority of supplies)
                 for s, e, is_op in merged:
                     # skip if no overlap
                     if e < entry_with_buffer or s > ext:
@@ -212,40 +211,6 @@ def process_member(item):
             "spell_length_days": (extended - entry).days + 1
         })
     return out, drug_changes_local
-
-def init_worker(_spell_groups, lookback_days=60):
-    global SPELL_GROUPS, LOOKBACK
-    SPELL_GROUPS = _spell_groups
-    LOOKBACK = np.timedelta64(lookback_days, "D")
-
-def censor_member(args):
-    mid, g = args
-    sp = SPELL_GROUPS.get(mid)
-    if g.empty or sp is None or len(sp) == 0:
-        return g.iloc[0:0]
-
-    # sp is shape (k, 2): [:,0]=start, [:,1]=end, already datetime64[ns]
-    starts = sp[:, 0] - LOOKBACK   # 60-day lookback
-    ends   = sp[:, 1]
-
-    # ensure starts sorted (cheap even if pre-sorted)
-    order = np.argsort(starts)
-    starts, ends = starts[order], ends[order]
-
-    # dates already datetime64[ns] from the global conversion
-    dates = g["date"].to_numpy(dtype="datetime64[ns]")
-
-    valid = ~np.isnat(dates)
-    if not valid.any():
-        return g.iloc[0:0]
-
-    idx = np.searchsorted(starts, dates[valid], side="right") - 1
-    keep_valid = (idx >= 0) & (dates[valid] <= ends[idx])
-
-    keep = np.zeros(len(dates), dtype=bool)
-    keep[np.flatnonzero(valid)] = keep_valid
-
-    return g.loc[keep]
 
 def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/"):
     base = Path(scratch_dir)
@@ -388,65 +353,6 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     spells = pd.DataFrame(valid_spells)
     log(f"AE labeling and censoring completed. Spells remaining after AE-based censoring: {len(spells):,}")
-
-    # ---------- Apply enrollment + washout censoring to drug_changes ----------
-    log("Applying censoring to drug change events (chunked, memory-safe)...")
-
-    if not drug_changes.empty:
-
-        # Build group dicts once
-        spell_groups = {}
-        for mid, g in spells.groupby("MemberUID", sort=False):
-            starts = pd.to_datetime(g["entry_date"], errors="coerce").to_numpy(dtype="datetime64[ns]")
-            ends   = pd.to_datetime(g["extended_exit_date"], errors="coerce").to_numpy(dtype="datetime64[ns]")
-            spell_groups[mid] = np.column_stack([starts, ends])  # shape (k, 2)
-
-        # lazy generator instead of list(...)
-        def iter_member_groups(df):
-            for mid, g in df.groupby("MemberUID", sort=False):
-                yield (mid, g)
-
-        total_members = drug_changes["MemberUID"].nunique()
-        nproc = min(cpu_count(), 4)  # start small; raise if stable
-        log(f"Parallel censoring over {total_members:,} members using {nproc} workers...")
-
-        processed = 0
-        out_chunks = []   # small buffer of dataframes
-        big_chunks = []   # occasional larger concatenations to reduce list length
-
-        log(f"Launching parallel pool with {nproc} workers...")
-        with Pool(processes=nproc,
-                initializer=init_worker,
-                initargs=(spell_groups, 60),
-                maxtasksperchild=200) as pool:
-
-            for chunk in pool.imap_unordered(
-                    censor_member,
-                    iter_member_groups(drug_changes),
-                    chunksize=100):
-                processed += 1
-
-                if chunk is not None and not chunk.empty:
-                    out_chunks.append(chunk)
-
-                # Periodically compact the small buffer to cap memory growth
-                if len(out_chunks) >= 1000:
-                    big_chunks.append(pd.concat(out_chunks, ignore_index=True))
-                    out_chunks.clear()
-
-                if processed % 5000 == 0 or processed == total_members:
-                    log(f"  → Processed {processed:,}/{total_members:,} members ({processed/total_members:.1%})")
-
-        # Final combine: (at most a few big frames + small tail)
-        if big_chunks:
-            big_chunks.append(pd.concat(out_chunks, ignore_index=True))
-            drug_changes = pd.concat(big_chunks, ignore_index=True)
-        else:
-            drug_changes = pd.concat(out_chunks, ignore_index=True) if out_chunks else drug_changes.iloc[0:0]
-
-        log(f"Drug change events after censoring: {len(drug_changes):,}")
-    else:
-        log("No drug change events to censor.")
 
     # ---------- Save outputs ----------
     log("Saving output files...")
