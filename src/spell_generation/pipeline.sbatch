@@ -17,6 +17,9 @@ module load gcc/14.2.0 python/3.13.1
 # Activate Python environment (if applicable)
 source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
+# echo "[INFO] Running ndc to ATC mapping..."
+# python src/spell_generation/ndc_to_atc_mapping.py \
+
 echo "[INFO] Starting final run..."
 python src/spell_generation/spell_generation.py \
     --input_suffix "_sample1M" \
@@ -27,4 +30,7 @@ python src/spell_generation/spell_generation.py \
     --min_spell_len 7
 
 python src/spell_generation/split_spells_from_changes.py \
+    --suffix "_opioid_sample1M_grace15_minspell7_ae_censoring"
+
+python src/spell_generation/drug_combo_labeling.py \
     --suffix "_opioid_sample1M_grace15_minspell7_ae_censoring"
