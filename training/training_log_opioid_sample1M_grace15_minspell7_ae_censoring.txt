@@ -1,0 +1,101 @@
+
+============================================================
+Run time: 2025-11-18T17:07:14
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+AUC-PR:  0.0620
+AUC-ROC: 0.7807
+Threshold: 0.01
+Train shape: (252331, 2057), Valid shape: (63083, 2057)
+Classification report:
+              precision    recall  f1-score   support
+
+           0      1.000     0.000     0.000     62486
+           1      0.009     1.000     0.019       597
+
+    accuracy                          0.010     63083
+   macro avg      0.505     0.500     0.009     63083
+weighted avg      0.991     0.010     0.000     63083
+
+
+============================================================
+Run time: 2025-11-18T17:13:16
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+AUC-PR:  0.0675
+AUC-ROC: 0.7982
+Threshold: 0.01
+Train shape: (252331, 2057), Valid shape: (63083, 2057)
+Classification report:
+              precision    recall  f1-score   support
+
+           0      0.000     0.000     0.000     62486
+           1      0.009     1.000     0.019       597
+
+    accuracy                          0.009     63083
+   macro avg      0.005     0.500     0.009     63083
+weighted avg      0.000     0.009     0.000     63083
+
+
+============================================================
+Run description: With demographics and no numerical counts
+Run time: 2025-11-18T17:33:56
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+AUC-PR:  0.1984
+AUC-ROC: 0.8507
+Threshold: 0.01
+Train shape: (252331, 2070), Valid shape: (63083, 2070)
+Classification report:
+              precision    recall  f1-score   support
+
+           0      1.000     0.239     0.385     62486
+           1      0.012     1.000     0.024       597
+
+    accuracy                          0.246     63083
+   macro avg      0.506     0.619     0.205     63083
+weighted avg      0.991     0.246     0.382     63083
+
+
+============================================================
+Run description: With both demographics and numerical counts
+Run time: 2025-11-18T17:42:51
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+AUC-PR:  0.2113
+AUC-ROC: 0.8577
+Threshold: 0.01
+Train shape: (252331, 2072), Valid shape: (63083, 2072)
+Classification report:
+              precision    recall  f1-score   support
+
+           0      1.000     0.239     0.385     62486
+           1      0.012     1.000     0.024       597
+
+    accuracy                          0.246     63083
+   macro avg      0.506     0.619     0.205     63083
+weighted avg      0.991     0.246     0.382     63083
+
+
+============================================================
+Run description: Reduce estimators to 400
+Run time: 2025-11-18T17:55:08
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+AUC-PR:  0.2105
+AUC-ROC: 0.8596
+Threshold: 0.01
+Train shape: (252331, 2072), Valid shape: (63083, 2072)
+Classification report:
+              precision    recall  f1-score   support
+
+           0      1.000     0.238     0.384     62486
+           1      0.012     1.000     0.024       597
+
+    accuracy                          0.245     63083
+   macro avg      0.506     0.619     0.204     63083
+weighted avg      0.991     0.245     0.381     63083
+
+
+============================================================
+NEW HYPERPARAM SEARCH RUN
+Run description: Test
+Run time: 2025-11-18T17:56:35
+SUFFIX: _opioid_sample1M_grace15_minspell7_ae_censoring
+Train shape: (252331, 2072), Valid shape: (63083, 2072)
+scale_pos_weight: 104.7548
