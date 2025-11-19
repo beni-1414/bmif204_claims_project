@@ -85,7 +85,7 @@ spells["entry_date"] = pd.to_datetime(spells["entry_date"]).dt.date
 # per-spell window: [entry_date - 180d, entry_date)  (end is exclusive)
 windows = spells[["MemberUID", "spell_id", "split_seq", "entry_date"]].copy()
 windows["window_start"] = (pd.to_datetime(windows["entry_date"]) - pd.Timedelta(days=180)).dt.date
-windows["window_end"]  = pd.to_datetime(windows["entry_date"]).dt.date   # exclusive upper bound
+windows["window_end"]  = (pd.to_datetime(windows["entry_date"]) - pd.Timedelta(days=1)).dt.date
 
 # clean & types
 windows = windows.dropna(subset=["MemberUID", "spell_id", "split_seq", "window_start", "window_end"])
