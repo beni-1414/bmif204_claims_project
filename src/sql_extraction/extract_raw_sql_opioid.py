@@ -117,6 +117,7 @@ def write_sql(query: str, out_path: Path):
 
 # Build cohort once
 print("Building eligible_members temporary table...")
+write_sql(base_cte_create, PROJECT_PATH / "queries/base_cte_create.sql")
 conn.execute(base_cte_create)
 
 # Now run the simpler downstream queries
