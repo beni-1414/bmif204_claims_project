@@ -376,7 +376,6 @@ else:
             f_log.write(f"  params: {p}\n")
             f_log.write(f"  AUC-PR:  {auc_pr:.4f}\n")
             f_log.write(f"  AUC-ROC: {auc_roc:.4f}\n")
-            f_log.write(f"  best_iteration: {model.best_iteration}\n")
 
         # Track best
         if auc_pr > best_auc_pr:
