@@ -158,7 +158,7 @@ with engine.connect() as conn:
         """)
 
         # Fast append into temp table using this SAME connection
-        bulk_insert_member_windows(conn, w, batch=50_000)
+        bulk_insert_member_windows(conn, w, batch=5_000)
         # Stream out results in chunks and append to a single parquet
         chunks = pd.read_sql_query(text(icd10_sql), conn, chunksize=CHUNKSIZE)
 
