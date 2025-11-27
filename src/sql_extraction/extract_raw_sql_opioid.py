@@ -6,11 +6,9 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
 
-    parser.add_argument("--suffix", type=str, default="_sample1M",
+    parser.add_argument("--suffix", type=str, default="_sample5M",
                         help="Suffix used in filenames (e.g., '_sample1M' or '')")
-    parser.add_argument("--db", type=str, default="InovalonSample1M",
-                        help="Database name to connect to (e.g., 'InovalonSample5M' or 'InovalonSample1M')")
-
+    parser.add_argument("--db", type=int, default=5, help="Database size to connect to (1 for 1M, 5 for 5M)")
 
     args = parser.parse_args()
     return args
@@ -20,7 +18,7 @@ def parse_args():
 # ------------------------------
 args = parse_args()
 suffix = args.suffix
-database = args.db
+database = f"InovalonSample{args.db}M"
 conn_str = f'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database={database};TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
 
 conn = pyodbc.connect(conn_str)
@@ -53,53 +51,6 @@ for code in icd_df["code"]:
     code_conditions.append(f"cc.CodeValue LIKE '{code}'")
 icd_where_clause = " OR ".join(code_conditions)
 
-# ------------------------------
-# LOAD OPIOID NDC LIST
-# ------------------------------
-opioid_ndcs_path = Path("data/opioid_ndc11_list.csv")
-opioid_df = pd.read_csv(opioid_ndcs_path, dtype=str)
-opioid_ndcs = opioid_df["ndc11"].dropna().unique().tolist()
-
-# Build SQL-safe IN clause (chunked for SQL Server)
-def chunked(lst, n):
-    for i in range(0, len(lst), n):
-        yield lst[i:i+n]
-
-opioid_in_clauses = []
-for chunk in chunked(opioid_ndcs, 900):
-    vals = ",".join(f"'{x}'" for x in chunk)
-    opioid_in_clauses.append(f"m.ndc11code IN ({vals})")
-opioid_where = " OR ".join(opioid_in_clauses)
-
-# ------------------------------
-# CTE BLOCK
-# ------------------------------
-base_cte_create = f"""
-WITH member_drugs AS (
-    SELECT 
-        r.MemberUID,
-        r.ndc11code,
-        MIN(r.filldate) AS first_fill_date
-    FROM [RxClaim] r
-    WHERE r.supplydayscount IS NOT NULL
-    GROUP BY r.MemberUID, r.ndc11code
-),
-opioid_flags AS (
-    SELECT 
-        m.MemberUID,
-        MAX(CASE WHEN {opioid_where} THEN 1 ELSE 0 END) AS has_opioid,
-        COUNT(DISTINCT m.ndc11code) AS total_drugs
-    FROM member_drugs m
-    GROUP BY m.MemberUID
-)
-SELECT 
-    o.MemberUID
-INTO #eligible_members
-FROM opioid_flags o
-WHERE o.has_opioid = 1
-  AND o.total_drugs >= 3;
-"""
-
 
 # ------------------------------
 # HELPERS
@@ -115,26 +66,90 @@ def write_sql(query: str, out_path: Path):
     out_path.write_text(query)
     print(f"Wrote SQL to {out_path}")
 
-# Build cohort once
-print("Building eligible_members temporary table...")
-write_sql(base_cte_create, PROJECT_PATH / "queries/base_cte_create.sql")
-conn.execute(base_cte_create)
+def run_rx_batched(out_path: Path, batch_size: int = 200_000):
+    """
+    Run the Rx query in batches over elegible_members, save temporary parquet parts,
+    then merge into a single parquet at `out_path`.
+    """
+    rx_base_sql = f"""
+    WITH em AS (
+        SELECT 
+            MemberUID,
+            ROW_NUMBER() OVER (ORDER BY MemberUID) AS rn
+        FROM bef299.dbo.elegible_members_{args.db}M
+    )
+    SELECT 
+        r.MemberUID, 
+        r.filldate, 
+        r.ndc11code, 
+        r.supplydayscount
+    FROM [RxClaim] r
+    JOIN em ON r.MemberUID = em.MemberUID
+    WHERE em.rn BETWEEN ? AND ?;
+    """
+
+    # Save SQL for record-keeping
+    write_sql(rx_base_sql, PROJECT_PATH / "queries/rx_opioid_combo_query_batched.sql")
+
+    part_paths = []
+    start = 1
+    batch_idx = 0
+
+    while True:
+        end = start + batch_size - 1
+        print(f"Running RX batch {batch_idx} (rn {start}–{end}) ...")
+
+        df = pd.read_sql(rx_base_sql, conn, params=(start, end))
+
+        if df.empty:
+            print("No more rows for RX; stopping batching.")
+            break
+
+        part_path = out_path.with_name(
+            out_path.name.replace(".parquet", f"_part{batch_idx}.parquet")
+        )
+        print(f"  Retrieved {len(df):,} rows, saving to {part_path.name}")
+        df.to_parquet(part_path)
+        part_paths.append(part_path)
+
+        batch_idx += 1
+        start = end + 1
+
+    if not part_paths:
+        print("No RX data found; no parquet created.")
+        return
+
+    # Merge parts into a single parquet
+    print(f"Merging {len(part_paths)} RX parquet parts into {out_path.name} ...")
+    dfs = [pd.read_parquet(p) for p in part_paths]
+    full_df = pd.concat(dfs, ignore_index=True)
+    full_df.to_parquet(out_path)
+    print(f"  Final RX file saved to {out_path} with {len(full_df):,} rows")
+
+    # Clean up part files
+    for p in part_paths:
+        p.unlink()
+    print("  Temporary RX parquet parts removed.")
 
 # Now run the simpler downstream queries
 queries = {
-    "rx": ("SELECT r.MemberUID, r.filldate, r.ndc11code, r.supplydayscount "
-           "FROM [RxClaim] r JOIN #eligible_members em ON r.MemberUID = em.MemberUID", OUT_RX),
-    "ae": ("SELECT c.MemberUID, cc.ServiceDate AS event_date, cc.CodeType, cc.CodeValue "
-           "FROM [Claim] c JOIN [ClaimCode] cc ON c.ClaimUID = cc.ClaimUID "
-           "JOIN #eligible_members em ON c.MemberUID = em.MemberUID "
+    "rx": (f"SELECT r.MemberUID, r.filldate, r.ndc11code, r.supplydayscount "
+           f"FROM [RxClaim] r JOIN bef299.dbo.elegible_members_{args.db}M em ON r.MemberUID = em.MemberUID", OUT_RX),
+    "ae": (f"SELECT c.MemberUID, cc.ServiceDate AS event_date, cc.CodeType, cc.CodeValue "
+           f"FROM [Claim] c JOIN [ClaimCode] cc ON c.ClaimUID = cc.ClaimUID "
+           f"JOIN bef299.dbo.elegible_members_{args.db}M em ON c.MemberUID = em.MemberUID "
            f"WHERE cc.CodeType IN (17,18,22,23,24) AND ({icd_where_clause})", OUT_AE),
-    "demo": ("SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, m.zip3value, m.statecode "
-             "FROM [Member] m JOIN #eligible_members em ON m.MemberUID = em.MemberUID", OUT_DEMO),
-    "enroll": ("SELECT e.MemberUID, e.effectivedate, e.terminationdate "
-               "FROM [MemberEnrollment] e JOIN #eligible_members em ON e.MemberUID = em.MemberUID", OUT_ENROLL)
+    "demo": (f"SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, m.zip3value, m.statecode "
+             f"FROM [Member] m JOIN bef299.dbo.elegible_members_{args.db}M em ON m.MemberUID = em.MemberUID", OUT_DEMO),
+    "enroll": (f"SELECT e.MemberUID, e.effectivedate, e.terminationdate "
+               f"FROM [MemberEnrollment] e JOIN bef299.dbo.elegible_members_{args.db}M em ON e.MemberUID = em.MemberUID", OUT_ENROLL)
 }
 
 for name, (sql, out_path) in queries.items():
-    write_sql(sql, PROJECT_PATH / f"queries/{name}_opioid_combo_query.sql")
-    run_and_save(sql, out_path)
-
+    if name == "rx":
+        # Special batched handling for RX, with merge to a single parquet
+        run_rx_batched(out_path, batch_size=200_000)
+    else:
+        # One-shot query for all other tables
+        write_sql(sql, PROJECT_PATH / f"queries/{name}_opioid_combo_query.sql")
+        run_and_save(sql, out_path)
