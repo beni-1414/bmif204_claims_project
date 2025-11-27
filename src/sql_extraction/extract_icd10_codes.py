@@ -26,15 +26,13 @@ def bulk_insert_member_windows(conn, df, batch=50_000):
 # ------------------------------
 # CONFIG
 # ------------------------------
-full = False
-suffix = "" if full else "_sample1M"
-db = "InovalonSample1M"
-
 def parse_args():
     parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
 
     parser.add_argument("--suffix", type=str, default="_opioid_sample1M_grace15_minspell7_ae_censoring",
                         help="Suffix used in filenames (e.g., '_sample1M' or '')")
+    parser.add_argument("--db", type=int, default=5,
+                        help="Database to use: 1=InnovalonSample1M, 5=InovalonSample5M")
 
 
     args = parser.parse_args()
@@ -42,8 +40,9 @@ def parse_args():
 
 args = parse_args()
 SUFFIX = args.suffix
+db = f"InovalonSample{args.db}M"
 
-N_BUCKETS = 20               # adjust up/down for batch size (more buckets = smaller batches)
+N_BUCKETS = 100               # adjust up/down for batch size (more buckets = smaller batches)
 CHUNKSIZE = 200_000          # rows per fetch; tune for your RAM
 COMPRESSION = "snappy"
 
@@ -85,7 +84,7 @@ spells["entry_date"] = pd.to_datetime(spells["entry_date"]).dt.date
 # per-spell window: [entry_date - 180d, entry_date)  (end is exclusive)
 windows = spells[["MemberUID", "spell_id", "split_seq", "entry_date"]].copy()
 windows["window_start"] = (pd.to_datetime(windows["entry_date"]) - pd.Timedelta(days=180)).dt.date
-windows["window_end"]  = (pd.to_datetime(windows["entry_date"]) - pd.Timedelta(days=1)).dt.date
+windows["window_end"]  = (pd.to_datetime(windows["entry_date"]) - pd.Timedelta(days=1)).dt.date # Avoid catching the events on the entry_date itself
 
 # clean & types
 windows = windows.dropna(subset=["MemberUID", "spell_id", "split_seq", "window_start", "window_end"])
@@ -124,8 +123,6 @@ SELECT MemberUID, spell_id, split_seq, icd10_code
 FROM codes
 OPTION (RECOMPILE);
 """
-
-(PROJECT_PATH / "queries" / f"icd10_from_spells_batched{suffix}.sql").write_text(icd10_sql)
 
 # ------------------------------
 # EXECUTE BY BUCKET -> STREAM TO SINGLE PARQUET
