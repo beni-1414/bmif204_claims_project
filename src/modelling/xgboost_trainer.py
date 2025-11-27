@@ -115,7 +115,7 @@ print(f"Number of rows with None in gender: {gender_none_count}")
 df["age"] = df["entry_date"].dt.year - df["birthyear"]
 
 # You can add more later (e.g., spell_length_days, utilization, etc.)
-numeric_cols = ["age", "spell_length_days"]
+numeric_cols = ["age"]
 for col in numeric_cols:
     if col not in df.columns:
         print(f"Warning: numeric col {col} not in df, dropping from list.")
