@@ -21,6 +21,7 @@ def parse_args():
 
     parser.add_argument("--title", type=str, default="XGBoost AE30d model",
                         help="Description/title for this training run")
+    parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
 
 
     args = parser.parse_args()
@@ -31,10 +32,10 @@ TITLE = args.title
 # ---------------------------------------------------------------------
 # 1. Paths & constants
 # ---------------------------------------------------------------------
-SUFFIX = "_opioid_sample1M_grace15_minspell7_ae_censoring"
+SUFFIX = f"_opioid_sample{args.db}M_grace15_minspell7_ae_censoring"
 BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50")
 
-demographics_path = BASE / "demographics_opioid_sample1M.parquet"
+demographics_path = BASE / f"demographics_opioid_sample{args.db}M.parquet"
 split_spells_path = BASE / f"split_spells{SUFFIX}.parquet"
 icd10_path = BASE / f"icd10_codes_from_spells{SUFFIX}_clustered.parquet"
 
