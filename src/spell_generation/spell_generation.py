@@ -72,8 +72,11 @@ def build_spells_for_member(df):
 
     # --- 1. Merge overlapping intervals per drug ---
     for ndc, g in df.groupby("atc_3_code"): # Need to groupby rxnorm ingredient once we have the column
-        intervals = g[["start", "end"]].values
-        intervals = intervals[intervals[:, 0].argsort()]
+        # Make sure we're working with pandas Timestamps, not raw numpy values
+        starts = g["start"].tolist()  # list of Timestamps
+        ends = g["end"].tolist()      # list of Timestamps
+        intervals = list(zip(starts, ends))
+        intervals.sort(key=lambda x: x[0])  # sort by start time
         is_op = int(g["is_opioid"].iloc[0])  # NEW: opioid flag for this drug/ndc
         merged = []
         cur_start, cur_end = intervals[0]
@@ -221,16 +224,17 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
         INPUT_SUFFIX = "_opioid" + INPUT_SUFFIX
         OUTPUT_SUFFIX = "_opioid" + OUTPUT_SUFFIX
     log(f"Loading Parquet files from: {base}")
-    rx = pd.read_parquet(base / f"rx_fills{INPUT_SUFFIX}.parquet")
+    rx = pd.read_parquet(base / f"rx_fills{INPUT_SUFFIX}.parquet", columns=["MemberUID", "filldate", "ndc11code", "supplydayscount", "atc_3_code"])
     ae = pd.read_parquet(base / f"adverse_events{INPUT_SUFFIX}.parquet")
     enr = pd.read_parquet(base / f"enrollment{INPUT_SUFFIX}.parquet")
     log(f"Loaded rx_fills: {len(rx):,} rows | adverse_events: {len(ae):,} rows | enrollment: {len(enr):,} rows")
 
     # ---------- Prepare Rx intervals ----------
     log("Preparing Rx intervals...")
-    rx["filldate"] = pd.to_datetime(rx["filldate"]).dt.date
-    rx["start"] = rx["filldate"]
-    rx["end"] = rx["filldate"] + pd.to_timedelta(rx["supplydayscount"] - 1, unit="D")
+    rx["filldate"] = pd.to_datetime(rx["filldate"], errors="coerce")
+    rx["supplydayscount"] = pd.to_numeric(rx["supplydayscount"], downcast="integer")
+    rx.rename(columns={"filldate": "start"}, inplace=True)
+    rx["end"] = rx["start"] + pd.to_timedelta(rx["supplydayscount"] - 1, unit="D")
 
     # ---------- Build spells (parallelized) ----------
     log("Detecting polypharmacy spells per member (parallel)...")
@@ -243,29 +247,33 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     # Tag opioid fills once
     rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
 
-    members_iter = list(rx.groupby("MemberUID", sort=False))
-    nproc = min(cpu_count(), 8)  # cap to 8 for cluster jobs
+    # ✅ DO NOT wrap in list(...) – keep this as a lazy iterator
+    members_iter = rx.groupby("MemberUID", sort=False)
+
+    # ✅ Use fewer workers to reduce peak memory per node
+    nproc = min(cpu_count(), 2)  # try 2; you can bump to 3–4 if memory allows
 
     log(f"Launching parallel pool with {nproc} workers...")
+    all_spells = []
+    all_changes = []
+
     with Pool(processes=nproc) as pool:
-        results = []
-        total = len(members_iter)
+        total = n_members
         log(f"Processing {total:,} members in parallel...")
 
-        for i, r in enumerate(pool.imap_unordered(process_member, members_iter, chunksize=100), 1):
-            results.append(r)
+        for i, (spell_list, change_list) in enumerate(
+            pool.imap_unordered(process_member, members_iter, chunksize=100), 1
+        ):
+            all_spells.extend(spell_list)
+            all_changes.extend(change_list)
+
             if i % 5000 == 0 or i == total:
                 log(f"  → Processed {i:,}/{total:,} members ({i/total:.1%})")
 
-    # Split results into spells and drug changes
-    all_spells = []
-    all_changes = []
-    for spell_list, change_list in results:
-        all_spells.extend(spell_list)
-        all_changes.extend(change_list)
-
     spells = pd.DataFrame(all_spells)
     drug_changes = pd.DataFrame(all_changes)
+    del all_spells
+    del all_changes
     drug_changes["date"] = pd.to_datetime(drug_changes["date"], errors="coerce")
     log(f"Detected total spells: {len(spells):,}")
     log(f"Captured total drug change events: {len(drug_changes):,}")
@@ -275,8 +283,8 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # Enrollment censoring: ensure the spell is within enrollment periods
     log("Applying enrollment censoring...")
-    enr["effectivedate"] = pd.to_datetime(enr["effectivedate"]).dt.date
-    enr["terminationdate"] = pd.to_datetime(enr["terminationdate"]).dt.date
+    enr["effectivedate"] = pd.to_datetime(enr["effectivedate"])
+    enr["terminationdate"] = pd.to_datetime(enr["terminationdate"])
 
     followup_end = []
     for _, r in spells.iterrows():
@@ -313,7 +321,7 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events (takes a few minutes)...")
-    ae["event_date"] = pd.to_datetime(ae["event_date"]).dt.date
+    ae["event_date"] = pd.to_datetime(ae["event_date"])
     ae_groups = {m: g for m, g in ae.groupby("MemberUID", sort=False)}
 
     valid_spells = []
