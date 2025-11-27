@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH -p priority
-#SBATCH -t 1:00:00
-#SBATCH -c 8
-#SBATCH --mem=32G
+#SBATCH -p short
+#SBATCH -t 8:00:00
+#SBATCH -c 4
+#SBATCH --mem=64G
 #SBATCH --job-name=claims_processing
 #SBATCH --output=claims_extraction_%j.log
 #SBATCH --error=claims_extraction_%j.err
@@ -22,15 +22,15 @@ source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
 echo "[INFO] Starting final run..."
 python src/spell_generation/spell_generation.py \
-    --input_suffix "_sample1M" \
-    --output_suffix "_sample1M_grace15_minspell7_ae_censoring" \
+    --input_suffix "_sample5M" \
+    --output_suffix "_sample5M_grace15_minspell7_ae_censoring" \
     --opioid_flag True \
     --min_concurrent 3 \
     --grace_period 15 \
     --min_spell_len 7
 
 python src/spell_generation/split_spells_from_changes.py \
-    --suffix "_opioid_sample1M_grace15_minspell7_ae_censoring"
+    --suffix "_opioid_sample5M_grace15_minspell7_ae_censoring"
 
 python src/spell_generation/drug_combo_labeling.py \
-    --suffix "_opioid_sample1M_grace15_minspell7_ae_censoring"
+    --suffix "_opioid_sample5M_grace15_minspell7_ae_censoring"
