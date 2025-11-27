@@ -109,22 +109,46 @@ This code clusters the ICD10 codes extracted into a `_clustered` parquet file re
 Run the notebook to get descriptive stats and plots. Expand with more plots as needed.
 
 ### Whole pipeline execution
-First, extract data from SQL via:
+First, extract data from SQL. This process is a bit tricky. 
+
+1. Insert the query drugs (in our study, the opioid ndcs) into a table:
 ```bash
-python src/sql_extraction/extract_raw_sql_opioid.py --suffix "_sample1M" --db "InovalonSample1M"
+python src/sql_extraction/prepare_database_for_insertion --db 5
 ```
 
-Then, generate spells and labels. Modify the pipeline.sbatch file as needed, making sure to add a rellevant suffix, and submit via (it takes about 30 mins on the 1M sample)
+2. Run this query directly in SQL server (it can take a few hours, on the 5M db it took 4h30)
+```sql
+SELECT
+    r.MemberUID
+INTO bef299.dbo.elegible_members
+FROM RxClaim r
+LEFT JOIN dbo.OpioidNdc o
+    ON r.ndc11code = o.ndc11code
+WHERE r.supplydayscount IS NOT NULL
+GROUP BY r.MemberUID
+HAVING
+    MAX(CASE WHEN o.ndc11code IS NOT NULL THEN 1 ELSE 0 END) = 1
+    AND COUNT(DISTINCT r.ndc11code) >= 3;
+```
+
+3. Run the following script (ensure you have sufficient memory, on the 5M db it was necessary to ask for 64GB, for larger scales the code would need to be adapted to do even more chunking and modular processing so the whole dataframe is never loaded in memory):
+```bash
+python src/sql_extraction/extract_raw_sql_opioid.py --suffix "_sample5M" --db 5
+```
+
+4. Generate spells and labels. Modify the pipeline.sbatch file as needed, making sure to add a rellevant suffix, and submit via (it takes about 30 mins on the 1M sample, a lot more on the 5M, be sure to ask enough memory to avoid OOM error, although the code already does many memory management tricks):
 ```bash
 sbatch src/spell_generation/pipeline.sbatch
 ```
 
-Then, manually run the ICD10 extraction from SQL (it can't be run in a job):
+5. Manually run the ICD10 extraction from SQL (it can't be run in a job, and if it takes longer than a few seconds to start it means the db is locked by someone else. Recommend running at night when no one is using it):
 ```bash
 python src/sql_extraction/extract_icd10_codes.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
 
-Finally, run the ICD10 postprocessing (is quite fast):
+6. Run the ICD10 postprocessing (is quite fast):
 ```bash
 python src/icd10_postprocessing.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
+
+You are ready to analyse and run analysis!
