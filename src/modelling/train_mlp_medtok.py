@@ -3,6 +3,8 @@
 import argparse
 from pathlib import Path
 import json
+import math                      # <<< CHANGED
+import copy                      # <<< CHANGED
 
 import numpy as np
 import pandas as pd
@@ -30,7 +32,6 @@ def parse_args():
                         help="Description/title for this training run")
     parser.add_argument("--db", type=int, default=1, help="Database size (1 or 5) M")
 
-
     args = parser.parse_args()
     return args
 
@@ -54,8 +55,9 @@ MAX_DRUG_LEN = 15
 BATCH_SIZE = 512
 EPOCHS = 12
 LR = 1e-3
-HIDDEN_DIMS = (512, 256)
-DROPOUT = 0.3
+HIDDEN_DIMS = (256, 128)   # <<< CHANGED (smaller MLP)
+DROPOUT = 0.4               # <<< CHANGED (more regularization)
+EARLY_STOPPING_PATIENCE = 3 # <<< CHANGED
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {DEVICE}")
@@ -241,9 +243,11 @@ X_train_df, X_valid_df, y_train, y_valid = train_test_split(
 
 pos = y_train.sum()
 neg = len(y_train) - pos
-pos_weight_value = neg / pos
-print(f"Train positives: {pos}, negatives: {neg}, pos_weight: {pos_weight_value:.2f}")
 
+raw_pos_weight = neg / pos
+pos_weight_value = min(math.sqrt(raw_pos_weight), 20.0)  # <<< CHANGED
+print(f"Train positives: {pos}, negatives: {neg}, raw_pos_weight: {raw_pos_weight:.2f}, "
+      f"used_pos_weight: {pos_weight_value:.2f}")
 
 # ---------------------------------------------------------------------
 # 6. BUILD EMBEDDING MATRICES FOR ICD & DRUGS
@@ -458,13 +462,24 @@ pos_weight = torch.tensor(pos_weight_value, dtype=torch.float32, device=DEVICE)
 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
+# Optional LR scheduler on AUC-PR   <<< CHANGED
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode="max",
+    factor=0.5,
+    patience=1,
+    threshold=1e-4,
+)
+
 
 # ---------------------------------------------------------------------
 # 9. TRAINING LOOP
 # ---------------------------------------------------------------------
 
-best_auc_pr = -np.inf
+best_auc_pr = -1.0
 best_state_dict = None
+best_epoch = -1
+epochs_without_improvement = 0
 
 for epoch in range(1, EPOCHS + 1):
     print(f"\nEpoch {epoch}/{EPOCHS}")
@@ -520,10 +535,23 @@ for epoch in range(1, EPOCHS + 1):
     print(f"Valid AUC-PR:  {auc_pr:.4f}")
     print(f"Valid AUC-ROC: {auc_roc:.4f}")
 
-    if auc_pr > best_auc_pr:
+    # Step LR scheduler based on AUC-PR   <<< CHANGED
+    scheduler.step(auc_pr)
+
+    if auc_pr > best_auc_pr + 1e-4:  # small tolerance
         best_auc_pr = auc_pr
-        best_state_dict = model.state_dict().copy()
+        best_state_dict = copy.deepcopy(model.state_dict())  # <<< CHANGED
+        best_epoch = epoch
+        epochs_without_improvement = 0
         print("New best model found!")
+    else:
+        epochs_without_improvement += 1
+        print(f"No improvement in AUC-PR for {epochs_without_improvement} epoch(s).")
+
+    if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
+        print(f"Early stopping after {epoch} epochs. Best epoch was {best_epoch} "
+              f"with AUC-PR = {best_auc_pr:.4f}.")
+        break
 
 # ---------------------------------------------------------------------
 # 10. FINAL EVAL & SAVE
@@ -531,10 +559,15 @@ for epoch in range(1, EPOCHS + 1):
 
 if best_state_dict is not None:
     model.load_state_dict(best_state_dict)
+    print(f"\nLoaded best model from epoch {best_epoch} with AUC-PR = {best_auc_pr:.4f}")
+else:
+    print("\nWarning: no best_state_dict was set; using last epoch model.")
 
 model.eval()
 all_probs = []
 all_labels = []
+
+from tqdm import tqdm  # ensure tqdm imported here too if running standalone
 
 with torch.no_grad():
     for batch in tqdm(valid_loader, desc="Final evaluation"):
@@ -569,7 +602,7 @@ print(classification_report(all_labels, y_pred, digits=3))
 save_dir = BASE / "mlp_models"
 save_dir.mkdir(parents=True, exist_ok=True)
 
-## Save a log with all detail about the model and training in a text file
+# Save a log with all detail about the model and training in a text file
 log_path = save_dir / f"mlp_ae30d_medtok_model{SUFFIX}.txt"
 with open(log_path, "w") as f:
     f.write(f"Title: {TITLE}\n")
