@@ -15,6 +15,9 @@ from scipy import sparse
 from xgboost import XGBClassifier
 import joblib
 import argparse
+from datetime import datetime
+
+from src.modelling.final_preprocessing import final_common_preprocessing
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
@@ -22,6 +25,10 @@ def parse_args():
     parser.add_argument("--title", type=str, default="XGBoost AE30d model",
                         help="Description/title for this training run")
     parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
+    parser.add_argument("--single_train", action="store_true",
+                        help="If set, do a single training run instead of hyperparameter search")
+    parser.add_argument("--pos-neg-optimize", action="store_true",
+                        help="If set, optimize only the pos-neg weight ratio")
 
 
     args = parser.parse_args()
@@ -29,6 +36,8 @@ def parse_args():
 
 args = parse_args()
 TITLE = args.title
+SINGLE_TRAIN = args.single_train
+POS_NEG_OPTIMIZE = args.pos_neg_optimize
 # ---------------------------------------------------------------------
 # 1. Paths & constants
 # ---------------------------------------------------------------------
@@ -49,84 +58,7 @@ dem = pd.read_parquet(demographics_path)
 spells = pd.read_parquet(split_spells_path)
 icd = pd.read_parquet(icd10_path)
 
-print(f"dem shape:    {dem.shape}")
-print(f"spells shape: {spells.shape}")
-print(f"icd shape:    {icd.shape}")
-
-# ---------------------------------------------------------------------
-# 3. Basic cleaning / filters
-# ---------------------------------------------------------------------
-
-# Ensure date columns are datetime
-date_cols = ["entry_date", "raw_exit_date", "extended_exit_date",
-             "followup_end_date", "first_ae_date"]
-for c in date_cols:
-    if c in spells.columns:
-        spells[c] = pd.to_datetime(spells[c])
-
-# Filter spells: keep only drug_combo with len >= 3
-# (and make sure drug_combo is actually a list)
-spells = spells[spells["drug_combo"].map(len) >= 3]
-print(f"spells after drug_combo filter: {spells.shape}")
-
-# ---------------------------------------------------------------------
-# 4. Clean AE variable & define AE within 30 days
-# ---------------------------------------------------------------------
-# AE within 30 days of entry_date
-spells["ae_within_30d"] = (
-    spells["had_ae"]
-    & (spells["first_ae_date"] <= spells["entry_date"] + pd.Timedelta(days=AE_WINDOW_DAYS))
-)
-
-# How many AEs?
-print("Number of spells with AE", spells["had_ae"].sum())
-
-# Binary label
-spells["y"] = spells["ae_within_30d"].astype(int)
-print("Number of AE within 30 days:", spells["y"].sum())
-print("AE within 30 days rate:", spells["y"].mean())
-
-# ---------------------------------------------------------------------
-# 5. Merge demographics + spells + icd codes
-# ---------------------------------------------------------------------
-# icd has: ['MemberUID', 'spell_id', 'split_seq', 'icd10_codes']
-# spells has: ['MemberUID', 'spell_id', 'split_seq', ...]
-# demographics has: ['MemberUID', 'birthyear', 'gendercode',
-#                    'raceethnicitytypecode', 'zip3value', 'statecode']
-
-print("Merging tables...")
-dem = dem.drop_duplicates(subset=["MemberUID"], keep="first") # ensure unique MemberUIDs in dem
-df = spells.merge(dem, on="MemberUID", how="left")
-print("After merging demographics, df shape:", df.shape)
-df = df.merge(icd, on=["MemberUID", "spell_id", "split_seq"], how="left")
-
-print("Combined df shape:", df.shape)
-print("Number of AE within 30 days after merge:", df["y"].sum())
-# Print how many rows have NaN or None in birthyear
-nan_birthyear_count = df['birthyear'].isna().sum()
-gender_none_count = df['gendercode'].isna().sum()
-print(f"Number of rows with NaN in birthyear: {nan_birthyear_count}")
-print(f"Number of rows with None in gender: {gender_none_count}")
-
-# ---------------------------------------------------------------------
-# 6. Simple feature engineering - SKIP FOR NOW
-# ---------------------------------------------------------------------
-# Age at spell entry
-df["age"] = df["entry_date"].dt.year - df["birthyear"]
-
-# You can add more later (e.g., spell_length_days, utilization, etc.)
-numeric_cols = ["age"]
-for col in numeric_cols:
-    if col not in df.columns:
-        print(f"Warning: numeric col {col} not in df, dropping from list.")
-numeric_cols = [c for c in numeric_cols if c in df.columns]
-
-# Categorical demographics
-cat_cols = ["gendercode", "raceethnicitytypecode"]
-
-# Drop rows with missing essential info for now
-df = df.dropna(subset=["age", "gendercode"])
-print("Number of AE within 30 days after dropping missing essential info:", df["y"].sum())
+df, numeric_cols, cat_cols = final_common_preprocessing(spells, dem, icd, AE_WINDOW_DAYS)
 
 # ---------------------------------------------------------------------
 # 7. Multi-hot encode drugs & ICD10 groups
@@ -220,8 +152,7 @@ neg = len(y_train) - pos
 scale_pos_weight = neg / pos
 print(f"Train positives: {pos}, negatives: {neg}, scale_pos_weight: {scale_pos_weight:.2f}")
 
-single_train = False  # Set to True to do single training run without hyperparam search
-if single_train:
+if SINGLE_TRAIN:
 
     # ---------------------------------------------------------------------
     # 10. Train XGBoost model (simple baseline)
@@ -230,7 +161,7 @@ if single_train:
     model = XGBClassifier(
         objective="binary:logistic",
         eval_metric="aucpr",
-        scale_pos_weight=scale_pos_weight,   # keep as neg/pos for now
+        scale_pos_weight=0.2*scale_pos_weight, 
         max_depth=4,                         # was 5
         min_child_weight=8,                  # was 5
         learning_rate=0.05,
@@ -257,6 +188,7 @@ if single_train:
 
 
     print("Evaluating...")
+    best_model = model  # For saving later
     y_valid_proba = model.predict_proba(X_valid)[:, 1]
 
     auc_pr = average_precision_score(y_valid, y_valid_proba)
@@ -265,37 +197,83 @@ if single_train:
     print(f"AUC-PR:  {auc_pr:.4f}")
     print(f"AUC-ROC: {auc_roc:.4f}")
 
-    # Choose an initial probability threshold (you'll tune this later)
-    threshold = 0.01
-    y_valid_pred = (y_valid_proba >= threshold).astype(int)
 
+elif POS_NEG_OPTIMIZE:
+    # ---------------------------------------------------------------------
+    # 10. Hyperparameter sweep for XGBoost
+    # ---------------------------------------------------------------------
+
+    print("Starting hyperparameter search...")
+
+    # Small manual grid – you can tweak these values
+    param_grid = [
+        {"scale_pos_weight": scale} for scale in [0.05, 0.1, 0.15, 0.2]
+    ]
+
+    best_auc_pr = -np.inf
+    best_model = None
+    best_params = None
+    best_y_valid_proba = None
+
+    for i, p in enumerate(param_grid, start=1):
+        print("\n" + "-"*70)
+        print(f"Config {i}/{len(param_grid)}: {p}")
+        print(f"Using scale_pos_weight: {scale_pos_weight*p['scale_pos_weight']:.4f}")
+
+        model = XGBClassifier(
+            objective="binary:logistic",
+            eval_metric="aucpr",
+            scale_pos_weight=scale_pos_weight*p["scale_pos_weight"],
+            max_depth=4,
+            min_child_weight=8,
+            learning_rate=0.05,
+            n_estimators=400,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            tree_method="hist",
+            n_jobs=8,
+            random_state=42,
+        )
+
+        model.fit(
+            X_train,
+            y_train,
+            eval_set=[(X_valid, y_valid)],
+            verbose=50,
+            # early_stopping_rounds=50
+        )
+
+        # Eval for this config
+        y_valid_proba = model.predict_proba(X_valid)[:, 1]
+        auc_pr = average_precision_score(y_valid, y_valid_proba)
+        auc_roc = roc_auc_score(y_valid, y_valid_proba)
+
+        print(f"Config {i} AUC-PR:  {auc_pr:.4f}")
+        print(f"Config {i} AUC-ROC: {auc_roc:.4f}")
+
+        # Track best
+        if auc_pr > best_auc_pr:
+            best_auc_pr = auc_pr
+            best_model = model
+            best_params = p
+            best_y_valid_proba = y_valid_proba
+
+    # ---------------------------------------------------------------------
+    # 11. Final evaluation for best model
+    # ---------------------------------------------------------------------    
+    print("\n" + "="*70)
+    print("Best hyperparameters:", best_params)
+    print(f"Best AUC-PR:  {best_auc_pr:.4f}")
+
+    best_auc_roc = roc_auc_score(y_valid, best_y_valid_proba)
+    print(f"Best AUC-ROC: {best_auc_roc:.4f}")
+
+    # Choose an arbitrary initial threshold (you'll tune later)
+    threshold = 0.01
+    y_valid_pred = (best_y_valid_proba >= threshold).astype(int)
     print(f"\nClassification report at threshold = {threshold}:")
     report_str = classification_report(y_valid, y_valid_pred, digits=3)
     print(report_str)
-
-    log_path = f"training/training_log{SUFFIX}.txt"
-    with open(log_path, "a") as f:
-        f.write("\n" + "="*60 + "\n")
-        f.write(f"Run description: {TITLE}\n")
-        f.write(f"Run time: {datetime.now().isoformat(timespec='seconds')}\n")
-        f.write(f"SUFFIX: {SUFFIX}\n")
-        f.write(f"AUC-PR:  {auc_pr:.4f}\n")
-        f.write(f"AUC-ROC: {auc_roc:.4f}\n")
-        f.write(f"Threshold: {threshold}\n")
-        f.write(f"Train shape: {X_train.shape}, Valid shape: {X_valid.shape}\n")
-        f.write("Classification report:\n")
-        f.write(report_str + "\n")
-
-    # ---------------------------------------------------------------------
-    # 12. Save model & encoders
-    # ---------------------------------------------------------------------
-    print("Saving model and encoders...")
-    joblib.dump(model, BASE / f"xgb_ae30d_model{SUFFIX}.joblib")
-    joblib.dump(mlb_drugs, BASE / "mlb_drugs.joblib")
-    joblib.dump(mlb_icd, BASE / "mlb_icd.joblib")
-    # joblib.dump(X_base.columns.tolist(), BASE / "base_feature_columns.joblib")
-
-    print("Done.")
 
 else:
     # ---------------------------------------------------------------------
@@ -387,7 +365,7 @@ else:
 
     # ---------------------------------------------------------------------
     # 11. Final evaluation for best model
-    # ---------------------------------------------------------------------
+    # ---------------------------------------------------------------------    
     print("\n" + "="*70)
     print("Best hyperparameters:", best_params)
     print(f"Best AUC-PR:  {best_auc_pr:.4f}")
@@ -402,26 +380,13 @@ else:
     report_str = classification_report(y_valid, y_valid_pred, digits=3)
     print(report_str)
 
-    with open(log_path, "a") as f_log:
-        f_log.write("\n" + "-"*70 + "\n")
-        f_log.write("BEST MODEL SUMMARY\n")
-        f_log.write(f"  Best params: {best_params}\n")
-        f_log.write(f"  Best AUC-PR:  {best_auc_pr:.4f}\n")
-        f_log.write(f"  Best AUC-ROC: {best_auc_roc:.4f}\n")
-        f_log.write(f"  Threshold used for report: {threshold}\n")
-        f_log.write("  Classification report:\n")
-        f_log.write(report_str + "\n")
 
-    # ---------------------------------------------------------------------
-    # 12. Save best model & encoders
-    # ---------------------------------------------------------------------
-    print("Saving best model and encoders...")
+# ---------------------------------------------------------------------
+# 12. Save model & encoders
+# ---------------------------------------------------------------------
+print("Saving model and encoders...")
+joblib.dump(best_model, BASE / f"xgb_ae30d_model{SUFFIX}.joblib")
+joblib.dump(mlb_drugs, BASE / f"mlb_drugs{SUFFIX}.joblib")
+joblib.dump(mlb_icd, BASE / f"mlb_icd{SUFFIX}.joblib")
 
-    model_path = BASE / f"xgb_ae30d_model_best{SUFFIX}.joblib"
-    joblib.dump(best_model, model_path)
-    joblib.dump(mlb_drugs, BASE / "mlb_drugs.joblib")
-    joblib.dump(mlb_icd, BASE / "mlb_icd.joblib")
-    # joblib.dump(X_base.columns.tolist(), BASE / "base_feature_columns.joblib")
-
-    print(f"Best model saved to: {model_path}")
-    print("Done.")
+print("Done.")
