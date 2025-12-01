@@ -2,17 +2,20 @@ from pathlib import Path
 import pandas as pd
 
 # Paths to the parquet files you expect to generate
-SUFFIX = "_opioid_sample1M_grace15_minspell7_ae_censoring"
+SUFFIX = "_opioid_sample5M_grace15_minspell7_ae_censoring"
+BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")
 OUT_FILES = [
-    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/rx_fills_sample1M.parquet"),
-    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/adverse_events.parquet"),
-    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/demographics.parquet"),
-    # Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/enrollment.parquet"),
-    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/spells_with_labels{SUFFIX}.parquet"),
-    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/drug_changes{SUFFIX}.parquet"),
-    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/split_spells{SUFFIX}.parquet"),
-    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/icd10_codes_from_spells{SUFFIX}.parquet"),
-    Path(f"/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/icd10_codes_from_spells{SUFFIX}_clustered.parquet"),
+    # BASE / "rx_fills_opioid_sample5M.parquet",
+    # BASE / "rx_fills_opioid_sample1M.parquet",
+    # BASE / "adverse_events_opioid_sample1M.parquet",
+    # BASE / "demographics_sample1M.parquet",
+    # BASE / "enrollment.parquet",
+    # BASE / f"spells_with_labels{SUFFIX}.parquet",
+    # BASE / f"drug_changes{SUFFIX}.parquet",
+    # BASE / f"split_spells{SUFFIX}.parquet",
+    # BASE / f"split_spells{SUFFIX}_with_drugcombo.parquet",
+    # BASE / f"icd10_codes_from_spells{SUFFIX}.parquet",
+    # BASE / f"icd10_codes_from_spells{SUFFIX}_clustered.parquet",
 ]
 
 def test_parquet_file(path: Path):
@@ -25,6 +28,8 @@ def test_parquet_file(path: Path):
         df = pd.read_parquet(path)
         print(f"✅ Successfully read {len(df):,} rows, {len(df.columns)} columns")
         print(df.head(20))  # preview a few rows
+        # Print list of columns
+        print(f"Columns: {df.columns.tolist()}")
         return True
     except Exception as e:
         print(f"❌ Failed to read {path}: {e}")
