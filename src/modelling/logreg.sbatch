@@ -15,4 +15,4 @@ module load gcc/14.2.0 python/3.13.1
 # Activate Python environment (if applicable)
 source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
-python src/modelling/logreg.py --title "LogReg AE30d model 5M" --db 5
+python -m src.modelling.logreg #args (see src/modelling/logreg.py for details)

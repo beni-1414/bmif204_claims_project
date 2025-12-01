@@ -16,12 +16,15 @@ from xgboost import XGBClassifier
 import joblib
 import argparse
 
+from src.modelling.final_preprocessing import final_common_preprocessing
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
 
     parser.add_argument("--title", type=str, default="LogReg AE30d model",
                         help="Description/title for this training run")
     parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
+    parser.add_argument("--bootstrap", action="store_true", help="Whether to perform bootstrap CIs for ORs")
 
 
     args = parser.parse_args()
@@ -29,6 +32,7 @@ def parse_args():
 
 args = parse_args()
 TITLE = args.title
+BOOTSTRAP = args.bootstrap
 # ---------------------------------------------------------------------
 # 1. Paths & constants
 # ---------------------------------------------------------------------
@@ -49,122 +53,8 @@ dem = pd.read_parquet(demographics_path)
 spells = pd.read_parquet(split_spells_path)
 icd = pd.read_parquet(icd10_path)
 
-print(f"dem shape:    {dem.shape}")
-print(f"spells shape: {spells.shape}")
-print(f"icd shape:    {icd.shape}")
 
-# ---------------------------------------------------------------------
-# 3. Basic cleaning / filters
-# ---------------------------------------------------------------------
-
-# Ensure date columns are datetime
-date_cols = ["entry_date", "raw_exit_date", "extended_exit_date",
-             "followup_end_date", "first_ae_date"]
-for c in date_cols:
-    if c in spells.columns:
-        spells[c] = pd.to_datetime(spells[c])
-
-# Filter spells: keep only drug_combo with len >= 3
-# (and make sure drug_combo is actually a list)
-spells = spells[spells["drug_combo"].map(len) >= 3]
-print(f"spells after drug_combo filter: {spells.shape}")
-
-# ---------------------------------------------------------------------
-# 4. Clean AE variable & define AE within 30 days
-# ---------------------------------------------------------------------
-# AE within 30 days of entry_date
-spells["ae_within_30d"] = (
-    spells["had_ae"]
-    & (spells["first_ae_date"] <= spells["entry_date"] + pd.Timedelta(days=AE_WINDOW_DAYS))
-)
-
-# How many AEs?
-print("Number of spells with AE", spells["had_ae"].sum())
-
-# Binary label
-spells["y"] = spells["ae_within_30d"].astype(int)
-print("Number of AE within 30 days:", spells["y"].sum())
-print("AE within 30 days rate:", spells["y"].mean())
-
-# ---------------------------------------------------------------------
-# 4b. Deduplicate MemberUID + drug_combo, preferring AE rows
-# ---------------------------------------------------------------------
-
-# combo_key: canonical representation of drug combo (sorted tuple)
-spells["combo_key"] = spells["drug_combo"].apply(lambda combo: tuple(sorted(combo)))
-
-# Use the already-defined outcome for the dedup logic
-spells["y"] = spells["ae_within_30d"].astype(int)
-
-def deduplicate_member_drug_combos_fast(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Deduplicate by (MemberUID, combo_key), preferring rows with y == 1
-    (AE within 30 days). Among ties (multiple AE rows), keep first in
-    original order.
-    """
-    df_sorted = df.sort_values(
-        ["MemberUID", "combo_key", "y"],
-        ascending=[True, True, False],   # y=1 first
-        kind="mergesort"                 # stable: keeps earlier rows' order
-    )
-
-    deduped = (
-        df_sorted
-        .drop_duplicates(subset=["MemberUID", "combo_key"], keep="first")
-        .reset_index(drop=True)
-    )
-    return deduped
-
-print("Spells before deduplication:", len(spells))
-spells = deduplicate_member_drug_combos_fast(spells)
-print("Spells after deduplication:", len(spells))
-
-# (y already exists and is consistent with ae_within_30d)
-print("Number of AE within 30 days after dedup:", spells["y"].sum())
-print("AE within 30 days rate after dedup:", spells["y"].mean())
-
-
-# ---------------------------------------------------------------------
-# 5. Merge demographics + spells + icd codes
-# ---------------------------------------------------------------------
-# icd has: ['MemberUID', 'spell_id', 'split_seq', 'icd10_codes']
-# spells has: ['MemberUID', 'spell_id', 'split_seq', ...]
-# demographics has: ['MemberUID', 'birthyear', 'gendercode',
-#                    'raceethnicitytypecode', 'zip3value', 'statecode']
-
-print("Merging tables...")
-dem = dem.drop_duplicates(subset=["MemberUID"], keep="first") # ensure unique MemberUIDs in dem
-df = spells.merge(dem, on="MemberUID", how="left")
-print("After merging demographics, df shape:", df.shape)
-df = df.merge(icd, on=["MemberUID", "spell_id", "split_seq"], how="left")
-
-print("Combined df shape:", df.shape)
-print("Number of AE within 30 days after merge:", df["y"].sum())
-# Print how many rows have NaN or None in birthyear
-nan_birthyear_count = df['birthyear'].isna().sum()
-gender_none_count = df['gendercode'].isna().sum()
-print(f"Number of rows with NaN in birthyear: {nan_birthyear_count}")
-print(f"Number of rows with None in gender: {gender_none_count}")
-
-# ---------------------------------------------------------------------
-# 6. Simple feature engineering - SKIP FOR NOW
-# ---------------------------------------------------------------------
-# Age at spell entry
-df["age"] = df["entry_date"].dt.year - df["birthyear"]
-
-# You can add more later (e.g., spell_length_days, utilization, etc.)
-numeric_cols = ["age"]
-for col in numeric_cols:
-    if col not in df.columns:
-        print(f"Warning: numeric col {col} not in df, dropping from list.")
-numeric_cols = [c for c in numeric_cols if c in df.columns]
-
-# Categorical demographics
-cat_cols = ["gendercode", "raceethnicitytypecode"]
-
-# Drop rows with missing essential info for now
-df = df.dropna(subset=["age", "gendercode"])
-print("Number of AE within 30 days after dropping missing essential info:", df["y"].sum())
+df, numeric_cols, cat_cols = final_common_preprocessing(spells, dem, icd, AE_WINDOW_DAYS)
 
 # ---------------------------------------------------------------------
 # 7. Multi-hot encode drugs & ICD10 groups
@@ -260,8 +150,6 @@ y = df["y"].values
 
 print("Final feature matrix shape:", X.shape)
 
-print("Final feature matrix shape:", X.shape)
-
 # ---------------------------------------------------------------------
 # 9. Train/validation split (stratified)
 # ---------------------------------------------------------------------
@@ -294,7 +182,7 @@ print(f"Train positives: {pos}, negatives: {neg}")
 logreg = LogisticRegression(
     penalty="l2",
     solver="saga",
-    max_iter=200,          # adjust if you see convergence warnings
+    max_iter=3000,          # adjust if you see convergence warnings
     n_jobs=8,
     class_weight="balanced",  # compensates for imbalance
     verbose=1,
@@ -302,6 +190,12 @@ logreg = LogisticRegression(
 
 print("Training logistic regression...")
 logreg.fit(X_train, y_train)
+
+model_path = BASE / f"logreg_model{SUFFIX}.joblib"
+joblib.dump(logreg, model_path)
+
+print(f"Saved logistic regression model to: {model_path}")
+
 
 print("Evaluating logistic regression...")
 y_valid_proba = logreg.predict_proba(X_valid)[:, 1]
@@ -312,29 +206,80 @@ auc_roc = roc_auc_score(y_valid, y_valid_proba)
 print(f"LogReg AUC-PR:  {auc_pr:.4f}")
 print(f"LogReg AUC-ROC: {auc_roc:.4f}")
 
-threshold = 0.01
-y_valid_pred = (y_valid_proba >= threshold).astype(int)
+if BOOTSTRAP:
+    # ---------------------------------------------------------------------
+    # 11. Build feature names (must match X column order)
+    # ---------------------------------------------------------------------
+    base_feature_names = list(X_base.columns)
+    drug_feature_names = [f"DRUG_{c}" for c in mlb_drugs.classes_]
+    icd_feature_names  = [f"ICD_{c}" for c in icd_kept_classes]
 
-print(f"\nLogReg classification report at threshold = {threshold}:")
-print(classification_report(y_valid, y_valid_pred, digits=3))
+    feature_names = base_feature_names + drug_feature_names + icd_feature_names
+    assert len(feature_names) == X.shape[1], "Feature name length mismatch!"
 
+    # ---------------------------------------------------------------------
+    # 12. Bootstrap CIs for coefficients / odds ratios
+    # ---------------------------------------------------------------------
+    from joblib import Parallel, delayed
+    from sklearn.linear_model import LogisticRegression
 
-# Build feature name list in the same order as X
-base_feature_names = list(X_base.columns)
-drug_feature_names = [f"DRUG_{c}" for c in mlb_drugs.classes_]
-icd_feature_names  = [f"ICD_{c}" for c in icd_kept_classes]
+    B = 200
+    n_train, n_features = X_train.shape
+    rng_master = np.random.default_rng(42)
 
-feature_names = base_feature_names + drug_feature_names + icd_feature_names
+    print(f"Bootstrapping logistic regression coefficients with B={B}...")
 
-coef = logreg.coef_.ravel()
-logreg_summary = pd.DataFrame({
-    "feature": feature_names,
-    "coef": coef,
-    "OR": np.exp(coef)
-}).sort_values("OR", ascending=False)
+    def fit_bootstrap(seed):
+        rng = np.random.default_rng(seed)
+        idx = rng.integers(0, n_train, size=n_train)
 
-print("Top positive features (highest OR):")
-print(logreg_summary.head(50))
+        Xb = X_train[idx]
+        yb = y_train[idx]
 
-print("Top negative features (protective):")
-print(logreg_summary.tail(50))
+        # NOTE: n_jobs=1 here, we parallelize over bootstraps instead
+        model = LogisticRegression(
+            penalty="l2",
+            solver="saga",
+            max_iter=1000,
+            n_jobs=1,
+            class_weight="balanced",
+            verbose=0,
+        )
+        model.fit(Xb, yb)
+        return model.coef_.ravel()
+
+    seeds = rng_master.integers(0, 1_000_000_000, size=B)
+
+    # Use n_jobs equal to number of cores on the node, e.g. 8
+    coefs_list = Parallel(n_jobs=8, verbose=10)(
+        delayed(fit_bootstrap)(int(s)) for s in seeds
+    )
+
+    coefs_boot = np.vstack(coefs_list).astype(np.float32)
+
+    print("Finished bootstrapping.")
+
+    # ---------------------------------------------------------------------
+    # 13. Summarize ORs and 95% CIs
+    # ---------------------------------------------------------------------
+    coef_orig = logreg.coef_.ravel()  # from your original model fit
+    coef_mean = coefs_boot.mean(axis=0)
+    coef_lower = np.percentile(coefs_boot, 2.5, axis=0)
+    coef_upper = np.percentile(coefs_boot, 97.5, axis=0)
+
+    or_df = pd.DataFrame({
+        "feature": feature_names,
+        "coef_orig": coef_orig,
+        "coef_boot_mean": coef_mean,
+        "OR": np.exp(coef_orig),
+        "OR_boot_mean": np.exp(coef_mean),
+        "CI_lower": np.exp(coef_lower),
+        "CI_upper": np.exp(coef_upper),
+    })
+
+    # Sort by original OR, descending
+    or_df = or_df.sort_values("OR", ascending=False)
+
+    ci_path = BASE / f"logreg_or_bootstrap_ci.parquet"
+    or_df.to_parquet(ci_path, index=False)
+    print(f"Saved bootstrap OR CI table to: {ci_path}")
