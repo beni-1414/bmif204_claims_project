@@ -3,7 +3,7 @@
 #SBATCH -t 00:10:00
 #SBATCH -c 8
 #SBATCH --mem=32G
-#SBATCH --job-name=xgboost_training
+#SBATCH --job-name=xgboost_trainings
 #SBATCH --output=xgboost_training_%j.log
 #SBATCH --error=xgboost_training_%j.err
 #SBATCH --mail-type=END,FAIL
@@ -15,4 +15,4 @@ module load gcc/14.2.0 python/3.13.1
 # Activate Python environment (if applicable)
 source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
-python -m src.modelling.xgboost_trainer #args (check xgboost_trainer.py for details)
+python -m src.modelling.xgboost_trainer --db 5 --single_train

@@ -19,53 +19,63 @@ Number of rows with None in gender: 0
 Filtering out 1290 rows (0.15%) where AE ICD prefix appears in icd10_codes (potential leakage).
 Number of AE within 30 days after leakage filter: 14187
 Rows remaining after leakage filter: 850999
-Number of AE within 30 days after dropping missing essential info: 14174
-AE within 30 days rate: 0.01669733459931816
-Final df shape: (848878, 24)
+Dropped 32617 rows with age > 120.
+Number of AE within 30 days after dropping missing essential info: 13959
+AE within 30 days rate: 0.017056826763051973
+Final df shape: (818382, 24)
 Fitting MultiLabelBinarizer for drugs...
 Number of drug classes: 200
 Fitting MultiLabelBinarizer for ICD10 groups...
-Number of ICD10 groups: 1988
+Number of ICD10 groups: 1987
 One-hot encoding demographics...
 Stacking feature matrices...
-Final feature matrix shape: (848878, 2202)
+Final feature matrix shape: (818382, 2201)
 Splitting train/validation...
-Train positives: 11339, negatives: 667763, scale_pos_weight: 58.89
+Train positives: 11167, negatives: 643538, scale_pos_weight: 57.63
 Training XGBoost...
-[0]	validation_0-aucpr:0.03207
-[50]	validation_0-aucpr:0.04836
-[100]	validation_0-aucpr:0.05055
-[150]	validation_0-aucpr:0.05191
-[200]	validation_0-aucpr:0.05251
-[250]	validation_0-aucpr:0.05258
-[300]	validation_0-aucpr:0.05262
-[350]	validation_0-aucpr:0.05280
-[399]	validation_0-aucpr:0.05291
+[0]	validation_0-aucpr:0.04146
+[50]	validation_0-aucpr:0.04788
+[100]	validation_0-aucpr:0.04979
+[150]	validation_0-aucpr:0.05089
+[200]	validation_0-aucpr:0.05101
+[250]	validation_0-aucpr:0.05115
+[300]	validation_0-aucpr:0.05117
+[350]	validation_0-aucpr:0.05116
+[399]	validation_0-aucpr:0.05122
 Evaluating...
-AUC-PR:  0.0671
-AUC-ROC: 0.7741
+AUC-PR:  0.0689
+AUC-ROC: 0.7717
 Saving model and encoders...
 Done.
 
-SCALE 0.2*58.89=11.778
-F1-max threshold: 0.4418
-Precision at F1-max: 0.1124
-Recall at F1-max:    0.1531
-F1-max:              0.1296
-Precision ≥ 0.05: threshold=0.2389, precision=0.0500, recall=0.4818
-Precision ≥ 0.10: threshold=0.4129, precision=0.1000, recall=0.1739
-Precision ≥ 0.20: threshold=0.6438, precision=0.2000, recall=0.0399
 
-Top 0% (n=169):
-  Precision@k: 0.2367
-  Recall@k:    0.0141
+F1-max threshold: 0.4453
+Precision at F1-max: 0.1172
+Recall at F1-max:    0.1511
+F1-max:              0.1320
+Precision ≥ 0.05: threshold=0.2345, precision=0.0500, recall=0.4943
+Precision ≥ 0.10: threshold=0.4053, precision=0.1000, recall=0.1866
+Precision ≥ 0.20: threshold=0.6674, precision=0.2000, recall=0.0283
 
-Top 1% (n=1697):
-  Precision@k: 0.1361
-  Recall@k:    0.0815
 
-Top 5% (n=8488):
-  Precision@k: 0.0792
-  Recall@k:    0.2370
+Top 0% (n=163):
+  Precision@k: 0.2577
+  Recall@k:    0.0150
 
-Baseline AE rate: 0.01670
+Top 1% (n=1636):
+  Precision@k: 0.1473
+  Recall@k:    0.0863
+
+Top 5% (n=8183):
+  Precision@k: 0.0816
+  Recall@k:    0.2393
+
+Top 10% (n=16367):
+  Precision@k: 0.0621
+  Recall@k:    0.3639
+
+Baseline AE rate: 0.017057986155660232
+Enrichment in top 5%: 4.785597333489269
+
+
+Results from the scale_pos_weight sweep showed best performance for 0.2 and below, without much variation as you went lower but with a narrwoing of the prediction probability space. Thus, 0.2 was chosen.
