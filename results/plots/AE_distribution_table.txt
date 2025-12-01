@@ -1,0 +1,14 @@
+
+🧮 Aggregated AE Category Counts (for plot)
+                                                                                        Description  count
+                                             Mental and behavioural disorders due to use of opioids   4671
+      Poisoning by adverse effect of and underdosing of drugs medicaments and biological substances   4646
+ Mental and behavioural disorders due to multiple drug use and use of other psychoactive substances   1298
+                                                           Adverse effects not elsewhere classified   1289
+                 Mental and behavioural disorders due to use of other stimulants including caffeine    452
+                              Mental and behavioural disorders due to use of sedatives or hypnotics    371
+                                Complications of surgical and medical care not elsewhere classified    216
+                                                      Dermatitis due to substances taken internally    216
+                                                               Unspecified adverse effect of a drug    216
+                                                                        Drug-induced polyneuropathy    100
+Total Adverse Events Counted: 13959
