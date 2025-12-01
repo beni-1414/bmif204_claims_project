@@ -1,57 +1,18 @@
 # Inovalon project: polypharmacy and AEs
-This project explores the risk factors in polypharmacy patients that lead to a higher incidence of AEs.
+This project explores the risk factors in polypharmacy patients that lead to a higher incidence of AEs, and explores diverse prediction approaches.
 
-## Usage
-### Data extraction
-The data is extracted raw from SQL for processing in Python. The selection of ICD codes was done based on this paper https://pmc.ncbi.nlm.nih.gov/articles/PMC3994866, focusing on drugs that had A1, A2, B1, B2 or C class. There are 2 scripts, built in a similar structure:
+## Structure
 
-#### ``extract_raw_sql_opioid.py``
-This script connects to the Inovalon SQL Server and extracts member-level data related to opioid prescriptions and adverse events for downstream analysis.
 
-The script builds a cohort of eligible members based on prescription and claim data, filtering for members with:
-* At least one opioid prescription (has_opioid = 1)
-* At least 3 distinct drug fills (total_drugs >= 3)
+## Functionality
+### Data extraction scripts - `src/sql_extraction`
+- `extract_raw_sql_opioid.py`: Connects to the Inovalon SQL Server and extracts member-level opioid prescription and claim data, exporting key datasets as Parquet files for downstream processing (prescription fills, adverse events, demographics, enrollment).
+- `opioid_ndcs.py`: This script uses the OpenFDA database (Download from https://open.fda.gov/apis/drug/ndc/download/) to extract a CSV with all the rellevant NDC codes, and uses a library (#https://github.com/eddie-cosma/ndclib) to convert between NDC10 and NDC11. Only need to be rerun if changing the list of drugs.
+- `prepare_database_for_extraction.py`: Prepares helper tables and database objects (for example inserting the NDC list) needed by the extraction queries.
+- `extract_icd10_codes.py`: Extracts ICD-10 claim records around spell start/change times to support AE and diagnosis postprocessing.
+- `test_connection.py`: Small utility to verify database connectivity and credentials.
 
-It then exports multiple datasets as Parquet files for later processing.
-
-Some notable steps:
-* ICD-10 Filter Loading: Reads icd10_codes.csv to build a SQL WHERE clause matching relevant diagnosis codes for adverse event (AE) filtering.
-* Opioid NDC Loading: Reads opioid_ndc11_list.csv to create chunked SQL IN clauses identifying opioid drugs.
-* Cohort Definition: Executes a CTE (base_cte_create) to populate a temporary table #eligible_members containing qualified subjects.
-* Data Extraction:Runs and saves four queries for:
-    * rx_fills_opioid*.parquet: Prescription fills
-    * adverse_events_opioid*.parquet: AE claims
-    * demographics_opioid*.parquet: Member demographics
-    * enrollment_opioid*.parquet: Enrollment periods
-
-Each query is also saved to the queries/ folder for transparency.
-
-#### ``extract_raw_sql.py``
-Same as above, but for polypharmacy patients. Some rellevant steps:
-* ICD-10 Code Loading: Reads icd10_codes.csv and dynamically builds an SQL WHERE clause of CodeValue LIKE filters for identifying adverse event diagnoses.
-* Cohort Definition (CTE): Builds a layered SQL common table expression (base_cte) that:
-    * Identifies each member’s earliest fill dates per NDC.
-    * Ranks drug fills chronologically per member.
-    * Selects the 5th filled drug as the polypharmacy index date.
-    * Filters to members aged 65 or older at index.
-    * Links enrollment data to ensure eligibility (6-month continuous enrollment checked later in Python).
-* Data Extraction:Runs and saves four queries for:
-    * rx_fills*.parquet: Prescription fills
-    * adverse_events*.parquet: AE claims
-    * demographics*.parquet: Member demographics
-    * enrollment*.parquet: Enrollment periods
-
-Each query is also saved to the queries/ folder for transparency.
-
-#### ``opioid_ndcs.py``
-This script uses the OpenFDA database (Download from https://open.fda.gov/apis/drug/ndc/download/) to extract a CSV with all the rellevant NDC codes, and uses a library (#https://github.com/eddie-cosma/ndclib) to convert between NDC10 and NDC11.
-
-Only need to be rerun if the list of opioids needs to be modified.
-
-#### `test.py`
-Tests connectivity to SQL
-
-### Data processing:
+### Data processing scripts - `src/spell_generation`
 #### `spell_generation.py`
 
 This script detects **polypharmacy spells** and labels them with **adverse events (AEs)** using prescription, enrollment, and claims data extracted from SQL.

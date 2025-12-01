@@ -35,6 +35,15 @@ for chunk in chunked(opioid_ndcs, 900):
 
 conn = pyodbc.connect(conn_str)
 with conn.cursor() as cursor:
+    try:
+        cursor.execute("""
+            CREATE TABLE bef299.dbo.OpioidNdc (
+                ndc11code VARCHAR(11) NOT NULL PRIMARY KEY
+            );
+        """)
+    except Exception as e:
+            pass  # Table probably already exists
+    conn.commit()
     # Clear existing table
     cursor.execute("TRUNCATE TABLE bef299.dbo.OpioidNdc;")
     conn.commit()
