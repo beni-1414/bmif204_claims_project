@@ -193,6 +193,10 @@ def final_common_preprocessing(spells: pd.DataFrame, dem: pd.DataFrame, icd: pd.
     # ---------------------------------------------------------------------
     # Age at spell entry
     df["age"] = df["entry_date"].dt.year - df["birthyear"]
+    # Drop those rows where age is greater than 120
+    before_age_filter_len = len(df)
+    df = df[df["age"] <= 120]
+    print(f"Dropped {before_age_filter_len - len(df)} rows with age > 120.")
 
     # You can add more later (e.g., spell_length_days, utilization, etc.)
     numeric_cols = ["age"]
