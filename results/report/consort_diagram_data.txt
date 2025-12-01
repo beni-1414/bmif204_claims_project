@@ -1,0 +1,11 @@
+DATA TO PUT IN THE CONSORT DIAGRAM:
+
+START: 5M patients
+ACTION: SQL filtering of drugs at interest (opioids) and 3 distinct drugs (very simple filter)
+SIZE: 824,793 patients
+ACTION: Generate the spells (no split yet)
+SIZE: 634,355 spells, 239,868 patients
+ACTION: Split spells on drug regimen changes
+SIZE: 1,581,017 spells, 239,868 patients
+ACTION: Preprocessing for data quality, elegibility enforcement and data leakage prevention
+FINAL SIZE: 818,382 spells, 207,388 patients
