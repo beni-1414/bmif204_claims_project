@@ -1,10 +1,11 @@
-# train_mlp_medtok.py
+# train_mlp_medtok_pooled.py
 
 import argparse
 from pathlib import Path
 import json
-import math                      # <<< CHANGED
-import copy                      # <<< CHANGED
+import math
+import copy
+import random
 
 import numpy as np
 import pandas as pd
@@ -13,27 +14,30 @@ from sklearn.metrics import (
     average_precision_score,
     roc_auc_score,
     classification_report,
+    f1_score,
 )
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from tqdm import tqdm
 
+from src.modelling.final_preprocessing import final_common_preprocessing
 
 # ---------------------------------------------------------------------
 # 0. HARD-CODED PARAMETERS
 # ---------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
+    parser = argparse.ArgumentParser(description="Train MLP AE30d model with MedTok embeddings")
 
-    parser.add_argument("--title", type=str, default="MLP AE30d model with MedTok embeddings",
+    parser.add_argument("--title", type=str, default="MLP AE30d model with MedTok embeddings (pooled)",
                         help="Description/title for this training run")
-    parser.add_argument("--db", type=int, default=1, help="Database size (1 or 5) M")
+    parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
 
     args = parser.parse_args()
     return args
+
 
 args = parse_args()
 TITLE = args.title
@@ -55,12 +59,20 @@ MAX_DRUG_LEN = 15
 BATCH_SIZE = 512
 EPOCHS = 12
 LR = 1e-3
-HIDDEN_DIMS = (256, 128)   # <<< CHANGED (smaller MLP)
-DROPOUT = 0.4               # <<< CHANGED (more regularization)
-EARLY_STOPPING_PATIENCE = 3 # <<< CHANGED
+HIDDEN_DIMS = (256, 128)
+DROPOUT = 0.4
+EARLY_STOPPING_PATIENCE = 3
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {DEVICE}")
+
+# Reproducibility
+SEED = 42
+torch.manual_seed(SEED)
+np.random.seed(SEED)
+random.seed(SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(SEED)
 
 PAD_TOKEN = "<PAD>"
 UNK_TOKEN = "<UNK>"
@@ -120,7 +132,7 @@ def build_code_vocab(series_of_lists):
 
 
 # ---------------------------------------------------------------------
-# 2. LOAD DATA (AS IN YOUR XGBOOST SCRIPT)
+# 2. LOAD DATA
 # ---------------------------------------------------------------------
 
 print("Loading data...")
@@ -128,55 +140,11 @@ dem = pd.read_parquet(demographics_path)
 spells = pd.read_parquet(split_spells_path)
 icd = pd.read_parquet(icd10_path)
 
-print(f"dem shape:    {dem.shape}")
-print(f"spells shape: {spells.shape}")
-print(f"icd shape:    {icd.shape}")
+df, _, _ = final_common_preprocessing(spells, dem, icd, AE_WINDOW_DAYS)
 
-date_cols = [
-    "entry_date",
-    "raw_exit_date",
-    "extended_exit_date",
-    "followup_end_date",
-    "first_ae_date",
-]
-for c in date_cols:
-    if c in spells.columns:
-        spells[c] = pd.to_datetime(spells[c])
-
-# keep spells with >= 3 drugs
-spells = spells[spells["drug_combo"].map(len) >= 3]
-print(f"spells after drug_combo filter: {spells.shape}")
-
-# define AE within 30 days
-spells["ae_within_30d"] = (
-    spells["had_ae"]
-    & (spells["first_ae_date"] <= spells["entry_date"] + pd.Timedelta(days=AE_WINDOW_DAYS))
-)
-spells["y"] = spells["ae_within_30d"].astype(int)
-
-print("Number of AE within 30 days:", spells["y"].sum())
-print("AE within 30 days rate:", spells["y"].mean())
-
-# merge demographics + spells + icd
-print("Merging tables...")
-dem = dem.drop_duplicates(subset=["MemberUID"], keep="first")
-df = spells.merge(dem, on="MemberUID", how="left")
-df = df.merge(icd, on=["MemberUID", "spell_id", "split_seq"], how="left")
-
-print("Combined df shape:", df.shape)
-print("Number of AE within 30 days after merge:", df["y"].sum())
-
-# age at entry
-df["age"] = df["entry_date"].dt.year - df["birthyear"]
-
-# drop rows with missing essential info
-df = df.dropna(subset=["age", "gendercode"])
-print("Number of AE within 30 days after dropping missing essential info:", df["y"].sum())
-
-# make ICD & drug lists
+# Ensure the sequence columns are list-like
 df["icd10_codes"] = df["icd10_codes"].apply(to_list_or_empty)
-df["drug_combo"] = df["drug_combo"].apply(lambda x: list(x))
-
+df["drug_combo"] = df["drug_combo"].apply(to_list_or_empty)
 
 # ---------------------------------------------------------------------
 # 3. LOAD MEDTOK EMBEDDINGS
@@ -245,9 +213,12 @@ pos = y_train.sum()
 neg = len(y_train) - pos
 
 raw_pos_weight = neg / pos
-pos_weight_value = min(math.sqrt(raw_pos_weight), 20.0)  # <<< CHANGED
-print(f"Train positives: {pos}, negatives: {neg}, raw_pos_weight: {raw_pos_weight:.2f}, "
-      f"used_pos_weight: {pos_weight_value:.2f}")
+pos_weight_value = min(raw_pos_weight, 50.0)  # full ratio but capped
+print(
+    f"Train positives: {pos}, negatives: {neg}, "
+    f"raw_pos_weight: {raw_pos_weight:.2f}, used_pos_weight: {pos_weight_value:.2f}"
+)
+
 
 # ---------------------------------------------------------------------
 # 6. BUILD EMBEDDING MATRICES FOR ICD & DRUGS
@@ -345,10 +316,23 @@ valid_dataset = ClaimsSequenceDataset(
     max_drug_len=MAX_DRUG_LEN,
 )
 
+# WeightedRandomSampler to help with imbalance
+train_labels = y_train.astype(int)
+class_sample_count = np.bincount(train_labels)  # [num_neg, num_pos]
+class_weights = 1.0 / class_sample_count
+sample_weights = class_weights[train_labels]
+
+sample_weights = torch.from_numpy(sample_weights).double()
+train_sampler = WeightedRandomSampler(
+    weights=sample_weights,
+    num_samples=len(sample_weights),
+    replacement=True,
+)
+
 train_loader = DataLoader(
     train_dataset,
     batch_size=BATCH_SIZE,
-    shuffle=True,
+    sampler=train_sampler,
     num_workers=4,
     pin_memory=True,
 )
@@ -363,16 +347,17 @@ valid_loader = DataLoader(
 
 
 # ---------------------------------------------------------------------
-# 8. MODEL
+# 8. MODEL WITH POOLED SEQUENCES
 # ---------------------------------------------------------------------
 
 class AE_MLP(nn.Module):
     """
-    Embedding-based MLP:
+    Embedding-based MLP with pooling:
       - ICD & drug tokens -> MedTok embeddings
       - Age, race, gender -> embeddings
-      - Concatenate [age_token, race_token, gender_token, diag_tokens, drug_tokens]
-      - Flatten to 1D and feed to MLP
+      - Masked mean pool ICD and drug sequences (ignore PAD)
+      - Concatenate [age, race, gender, pooled_icd, pooled_drug]
+      - Feed to MLP
     """
     def __init__(
         self,
@@ -393,12 +378,14 @@ class AE_MLP(nn.Module):
         self.embed_dim = icd_emb_matrix.shape[1]
         self.max_diag_len = max_diag_len
         self.max_drug_len = max_drug_len
+        self.pad_idx_icd = pad_idx_icd
+        self.pad_idx_drug = pad_idx_drug
 
         # ICD & drug embeddings from MedTok
         self.icd_embedding = nn.Embedding.from_pretrained(
             torch.tensor(icd_emb_matrix, dtype=torch.float32),
             padding_idx=pad_idx_icd,
-            freeze=False,  # allow fine-tuning
+            freeze=False,  # fine-tune embeddings
         )
         self.drug_embedding = nn.Embedding.from_pretrained(
             torch.tensor(drug_emb_matrix, dtype=torch.float32),
@@ -406,13 +393,13 @@ class AE_MLP(nn.Module):
             freeze=False,
         )
 
-        # demographic embeddings (same dim so they act as tokens)
+        # demographic embeddings (same dim so they act like tokens)
         self.age_embedding = nn.Embedding(num_age_bins, self.embed_dim)
         self.race_embedding = nn.Embedding(num_race, self.embed_dim)
         self.gender_embedding = nn.Embedding(num_gender, self.embed_dim)
 
-        seq_len_total = 3 + max_diag_len + max_drug_len
-        input_dim = seq_len_total * self.embed_dim
+        # age + race + gender (3D) + pooled_icd (D) + pooled_drug (D) => 5D
+        input_dim = 5 * self.embed_dim
 
         layers = []
         prev = input_dim
@@ -425,20 +412,31 @@ class AE_MLP(nn.Module):
         layers.append(nn.Linear(prev, 1))
         self.mlp = nn.Sequential(*layers)
 
+    def masked_mean(self, emb, ids, pad_idx):
+        """
+        emb: (B, L, D), ids: (B, L)
+        compute mean across non-pad tokens
+        """
+        mask = (ids != pad_idx).unsqueeze(-1)  # (B, L, 1)
+        masked_emb = emb * mask
+        lengths = mask.sum(dim=1).clamp(min=1)  # (B, 1)
+        return masked_emb.sum(dim=1) / lengths  # (B, D)
+
     def forward(self, diag_ids, drug_ids, age_ids, race_ids, gender_ids):
-        # diag_ids, drug_ids: (B, L)
-        # age_ids, race_ids, gender_ids: (B,)
-        diag_emb = self.icd_embedding(diag_ids)        # (B, Ld, D)
-        drug_emb = self.drug_embedding(drug_ids)       # (B, Lm, D)
+        diag_emb = self.icd_embedding(diag_ids)    # (B, Ld, D)
+        drug_emb = self.drug_embedding(drug_ids)   # (B, Lm, D)
 
-        age_emb = self.age_embedding(age_ids)          # (B, D)
-        race_emb = self.race_embedding(race_ids)       # (B, D)
-        gender_emb = self.gender_embedding(gender_ids) # (B, D)
+        diag_pooled = self.masked_mean(diag_emb, diag_ids, self.pad_idx_icd)   # (B, D)
+        drug_pooled = self.masked_mean(drug_emb, drug_ids, self.pad_idx_drug)  # (B, D)
 
-        demo_emb = torch.stack([age_emb, race_emb, gender_emb], dim=1)  # (B, 3, D)
+        age_emb = self.age_embedding(age_ids)        # (B, D)
+        race_emb = self.race_embedding(race_ids)     # (B, D)
+        gender_emb = self.gender_embedding(gender_ids)  # (B, D)
 
-        seq = torch.cat([demo_emb, diag_emb, drug_emb], dim=1)  # (B, 3+Ld+Lm, D)
-        x = seq.view(seq.size(0), -1)  # flatten matrix -> vector
+        x = torch.cat(
+            [age_emb, race_emb, gender_emb, diag_pooled, drug_pooled],
+            dim=1,
+        )  # (B, 5D)
 
         logits = self.mlp(x).squeeze(-1)
         return logits
@@ -460,9 +458,14 @@ model = AE_MLP(
 
 pos_weight = torch.tensor(pos_weight_value, dtype=torch.float32, device=DEVICE)
 criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-optimizer = torch.optim.Adam(model.parameters(), lr=LR)
 
-# Optional LR scheduler on AUC-PR   <<< CHANGED
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=LR,
+    weight_decay=1e-4,
+)
+
+# Optional LR scheduler on AUC-PR
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     optimizer,
     mode="max",
@@ -470,6 +473,15 @@ scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
     patience=1,
     threshold=1e-4,
 )
+
+# AMP setup
+USE_AMP = (DEVICE.type == "cuda")
+if USE_AMP:
+    from torch.cuda.amp import autocast, GradScaler
+    scaler = GradScaler()
+else:
+    autocast = None
+    scaler = None
 
 
 # ---------------------------------------------------------------------
@@ -488,18 +500,33 @@ for epoch in range(1, EPOCHS + 1):
 
     for batch in tqdm(train_loader, desc="Training"):
         diag_ids, drug_ids, age_ids, race_ids, gender_ids, labels = batch
-        diag_ids = diag_ids.to(DEVICE)
-        drug_ids = drug_ids.to(DEVICE)
-        age_ids = age_ids.to(DEVICE)
-        race_ids = race_ids.to(DEVICE)
-        gender_ids = gender_ids.to(DEVICE)
-        labels = labels.to(DEVICE)
+        diag_ids = diag_ids.to(DEVICE, non_blocking=True)
+        drug_ids = drug_ids.to(DEVICE, non_blocking=True)
+        age_ids = age_ids.to(DEVICE, non_blocking=True)
+        race_ids = race_ids.to(DEVICE, non_blocking=True)
+        gender_ids = gender_ids.to(DEVICE, non_blocking=True)
+        labels = labels.to(DEVICE, non_blocking=True)
 
         optimizer.zero_grad()
-        logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+
+        if USE_AMP:
+            with autocast():
+                logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+                loss = criterion(logits, labels)
+            scaler.scale(loss).backward()
+
+            # unscale before clipping
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+            loss = criterion(logits, labels)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+            optimizer.step()
 
         running_loss += loss.item() * labels.size(0)
 
@@ -514,15 +541,20 @@ for epoch in range(1, EPOCHS + 1):
     with torch.no_grad():
         for batch in tqdm(valid_loader, desc="Validation"):
             diag_ids, drug_ids, age_ids, race_ids, gender_ids, labels = batch
-            diag_ids = diag_ids.to(DEVICE)
-            drug_ids = drug_ids.to(DEVICE)
-            age_ids = age_ids.to(DEVICE)
-            race_ids = race_ids.to(DEVICE)
-            gender_ids = gender_ids.to(DEVICE)
-            labels = labels.to(DEVICE)
+            diag_ids = diag_ids.to(DEVICE, non_blocking=True)
+            drug_ids = drug_ids.to(DEVICE, non_blocking=True)
+            age_ids = age_ids.to(DEVICE, non_blocking=True)
+            race_ids = race_ids.to(DEVICE, non_blocking=True)
+            gender_ids = gender_ids.to(DEVICE, non_blocking=True)
+            labels = labels.to(DEVICE, non_blocking=True)
 
-            logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
-            probs = torch.sigmoid(logits)
+            if USE_AMP:
+                with autocast():
+                    logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+                    probs = torch.sigmoid(logits)
+            else:
+                logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+                probs = torch.sigmoid(logits)
 
             all_probs.append(probs.cpu().numpy())
             all_labels.append(labels.cpu().numpy())
@@ -535,12 +567,12 @@ for epoch in range(1, EPOCHS + 1):
     print(f"Valid AUC-PR:  {auc_pr:.4f}")
     print(f"Valid AUC-ROC: {auc_roc:.4f}")
 
-    # Step LR scheduler based on AUC-PR   <<< CHANGED
+    # Step LR scheduler based on AUC-PR
     scheduler.step(auc_pr)
 
     if auc_pr > best_auc_pr + 1e-4:  # small tolerance
         best_auc_pr = auc_pr
-        best_state_dict = copy.deepcopy(model.state_dict())  # <<< CHANGED
+        best_state_dict = copy.deepcopy(model.state_dict())
         best_epoch = epoch
         epochs_without_improvement = 0
         print("New best model found!")
@@ -549,9 +581,12 @@ for epoch in range(1, EPOCHS + 1):
         print(f"No improvement in AUC-PR for {epochs_without_improvement} epoch(s).")
 
     if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
-        print(f"Early stopping after {epoch} epochs. Best epoch was {best_epoch} "
-              f"with AUC-PR = {best_auc_pr:.4f}.")
+        print(
+            f"Early stopping after {epoch} epochs. Best epoch was {best_epoch} "
+            f"with AUC-PR = {best_auc_pr:.4f}."
+        )
         break
+
 
 # ---------------------------------------------------------------------
 # 10. FINAL EVAL & SAVE
@@ -567,20 +602,23 @@ model.eval()
 all_probs = []
 all_labels = []
 
-from tqdm import tqdm  # ensure tqdm imported here too if running standalone
-
 with torch.no_grad():
     for batch in tqdm(valid_loader, desc="Final evaluation"):
         diag_ids, drug_ids, age_ids, race_ids, gender_ids, labels = batch
-        diag_ids = diag_ids.to(DEVICE)
-        drug_ids = drug_ids.to(DEVICE)
-        age_ids = age_ids.to(DEVICE)
-        race_ids = race_ids.to(DEVICE)
-        gender_ids = gender_ids.to(DEVICE)
-        labels = labels.to(DEVICE)
+        diag_ids = diag_ids.to(DEVICE, non_blocking=True)
+        drug_ids = drug_ids.to(DEVICE, non_blocking=True)
+        age_ids = age_ids.to(DEVICE, non_blocking=True)
+        race_ids = race_ids.to(DEVICE, non_blocking=True)
+        gender_ids = gender_ids.to(DEVICE, non_blocking=True)
+        labels = labels.to(DEVICE, non_blocking=True)
 
-        logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
-        probs = torch.sigmoid(logits)
+        if USE_AMP:
+            with autocast():
+                logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+                probs = torch.sigmoid(logits)
+        else:
+            logits = model(diag_ids, drug_ids, age_ids, race_ids, gender_ids)
+            probs = torch.sigmoid(logits)
 
         all_probs.append(probs.cpu().numpy())
         all_labels.append(labels.cpu().numpy())
@@ -594,9 +632,21 @@ print("\nBest model on validation:")
 print(f"AUC-PR:  {final_auc_pr:.4f}")
 print(f"AUC-ROC: {final_auc_roc:.4f}")
 
-threshold = 0.01
-y_pred = (all_probs >= threshold).astype(int)
-print(f"\nClassification report at threshold = {threshold}:")
+# Threshold sweep for best F1
+best_thr = 0.5
+best_f1 = -1.0
+
+for thr in np.linspace(0.0, 1.0, 101):
+    y_pred_tmp = (all_probs >= thr).astype(int)
+    f1 = f1_score(all_labels, y_pred_tmp)
+    if f1 > best_f1:
+        best_f1 = f1
+        best_thr = thr
+
+print(f"\nBest F1 on validation: {best_f1:.4f} at threshold = {best_thr:.3f}")
+
+y_pred = (all_probs >= best_thr).astype(int)
+print(f"\nClassification report at threshold = {best_thr:.3f}:")
 print(classification_report(all_labels, y_pred, digits=3))
 
 save_dir = BASE / "mlp_models"
@@ -618,6 +668,8 @@ with open(log_path, "w") as f:
     f.write(f"Dropout: {DROPOUT}\n")
     f.write(f"Best AUC-PR: {final_auc_pr:.4f}\n")
     f.write(f"Best AUC-ROC: {final_auc_roc:.4f}\n")
+    f.write(f"Best F1: {best_f1:.4f}\n")
+    f.write(f"Best F1 threshold: {best_thr:.3f}\n")
     f.write(f"Title: {TITLE}\n")
 
 model_path = save_dir / f"mlp_ae30d_medtok_model{SUFFIX}.pt"
@@ -636,6 +688,7 @@ torch.save(
         "dropout": DROPOUT,
         "best_auc_pr": final_auc_pr,
         "best_auc_roc": final_auc_roc,
+        "best_threshold": float(best_thr),
         "title": TITLE,
     },
     model_path,

@@ -1,0 +1,74 @@
+Using device: cpu
+Loading data...
+dem shape:    (824793, 6)
+spells shape: (1794387, 14)
+icd shape:    (1231909, 4)
+spells after drug_combo filter: (1581017, 14)
+Number of AE within 30 days: 15387
+AE within 30 days rate: 0.009732343168985533
+Merging tables...
+Combined df shape: (1581017, 22)
+Number of AE within 30 days after merge: 15387
+Number of AE within 30 days after dropping missing essential info: 15374
+Loading MedTok embeddings from /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/code2embeddings.json ...
+Loaded 616451 MedTok codes, embedding dim = 256
+Building vocabularies...
+Number of ICD tokens (incl PAD/UNK): 1997
+Number of drug tokens (incl PAD/UNK): 204
+Age bins: ['18-24', '25-34', '35-44', '45-54', '55-64', '65-74', '75+']
+Race categories: ['01', '02', '04', '06', '09', '11']
+Gender categories: ['F', 'M', 'U']
+Train positives: 12299, negatives: 1249613, raw_pos_weight: 101.60, used_pos_weight: 10.08
+Building ICD and drug embedding matrices from MedTok...
+
+Epoch 1/12
+Train loss: 0.3254
+Valid AUC-PR:  0.0380
+Valid AUC-ROC: 0.7507
+New best model found!
+
+Epoch 2/12
+Train loss: 0.2850
+Valid AUC-PR:  0.0404
+Valid AUC-ROC: 0.7590
+New best model found!
+
+Epoch 3/12
+Train loss: 0.2696
+Valid AUC-PR:  0.0348
+Valid AUC-ROC: 0.7466
+No improvement in AUC-PR for 1 epoch(s).
+
+Epoch 4/12
+Train loss: 0.2504
+Valid AUC-PR:  0.0268
+Valid AUC-ROC: 0.7103
+No improvement in AUC-PR for 2 epoch(s).
+
+Epoch 5/12
+Train loss: 0.2188
+Valid AUC-PR:  0.0230
+Valid AUC-ROC: 0.6650
+No improvement in AUC-PR for 3 epoch(s).
+Early stopping after 5 epochs. Best epoch was 2 with AUC-PR = 0.0404.
+
+Loaded best model from epoch 2 with AUC-PR = 0.0404
+
+Best model on validation:
+AUC-PR:  0.0404
+AUC-ROC: 0.7590
+
+Classification report at threshold = 0.01:
+              precision    recall  f1-score   support
+
+         0.0      0.999     0.121     0.216    312403
+         1.0      0.011     0.991     0.022      3075
+
+    accuracy                          0.130    315478
+   macro avg      0.505     0.556     0.119    315478
+weighted avg      0.990     0.130     0.214    315478
+
+
+Model saved to: /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/mlp_models/mlp_ae30d_medtok_model_opioid_sample5M_grace15_minspell7_ae_censoring.pt
+Log saved to: /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/mlp_models/mlp_ae30d_medtok_model_opioid_sample5M_grace15_minspell7_ae_censoring.txt
+Done.

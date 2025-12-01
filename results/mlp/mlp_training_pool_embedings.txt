@@ -1,0 +1,101 @@
+Using device: cpu
+Loading data...
+dem shape:    (824793, 6)
+spells shape: (1794387, 14)
+icd shape:    (1231909, 4)
+spells after drug_combo filter: (1581017, 14)
+spells after short no-AE spell filter: (932712, 14) (removed 41.01% rows)
+Number of spells with AE 17605
+Number of AE within 30 days: 15387
+AE within 30 days rate: 0.016497053752926948
+Spells before deduplication: 932712
+Spells after deduplication: 852289
+Number of AE within 30 days after dedup: 15380
+Merging tables...
+After merging demographics, df shape: (852289, 22)
+Combined df shape: (852289, 23)
+Number of AE within 30 days after merge: 15380
+Number of rows with NaN in birthyear: 2121
+Number of rows with None in gender: 0
+Filtering out 1290 rows (0.15%) where AE ICD prefix appears in icd10_codes (potential leakage).
+Number of AE within 30 days after leakage filter: 14187
+Rows remaining after leakage filter: 850999
+Number of AE within 30 days after dropping missing essential info: 14174
+AE within 30 days rate: 0.01669733459931816
+Final df shape: (848878, 24)
+Loading MedTok embeddings from /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/code2embeddings.json ...
+Loaded 616451 MedTok codes, embedding dim = 256
+Building vocabularies...
+Number of ICD tokens (incl PAD/UNK): 1990
+Number of drug tokens (incl PAD/UNK): 202
+Age bins: ['18-24', '25-34', '35-44', '45-54', '55-64', '65-74', '75+']
+Race categories: ['01', '02', '04', '06', '09', '11']
+Gender categories: ['F', 'M', 'U']
+Train positives: 11339, negatives: 667763, raw_pos_weight: 58.89, used_pos_weight: 50.00
+Building ICD and drug embedding matrices from MedTok...
+
+Epoch 1/12
+Train loss: 3.3431
+Valid AUC-PR:  0.0490
+Valid AUC-ROC: 0.7467
+New best model found!
+
+Epoch 2/12
+Train loss: 2.0720
+Valid AUC-PR:  0.0489
+Valid AUC-ROC: 0.7404
+No improvement in AUC-PR for 1 epoch(s).
+
+Epoch 3/12
+Train loss: 2.0135
+Valid AUC-PR:  0.0503
+Valid AUC-ROC: 0.7366
+New best model found!
+
+Epoch 4/12
+Train loss: 1.9572
+Valid AUC-PR:  0.0550
+Valid AUC-ROC: 0.7362
+New best model found!
+
+Epoch 5/12
+Train loss: 1.8980
+Valid AUC-PR:  0.0537
+Valid AUC-ROC: 0.7343
+No improvement in AUC-PR for 1 epoch(s).
+
+Epoch 6/12
+Train loss: 1.8286
+Valid AUC-PR:  0.0529
+Valid AUC-ROC: 0.7320
+No improvement in AUC-PR for 2 epoch(s).
+
+Epoch 7/12
+Train loss: 1.7468
+Valid AUC-PR:  0.0536
+Valid AUC-ROC: 0.7275
+No improvement in AUC-PR for 3 epoch(s).
+Early stopping after 7 epochs. Best epoch was 4 with AUC-PR = 0.0550.
+
+Loaded best model from epoch 4 with AUC-PR = 0.0550
+
+Best model on validation:
+AUC-PR:  0.0550
+AUC-ROC: 0.7362
+
+Best F1 on validation: 0.0921 at threshold = 0.990
+
+Classification report at threshold = 0.990:
+              precision    recall  f1-score   support
+
+         0.0      0.988     0.899     0.941    166941
+         1.0      0.053     0.335     0.092      2835
+
+    accuracy                          0.890    169776
+   macro avg      0.520     0.617     0.517    169776
+weighted avg      0.972     0.890     0.927    169776
+
+
+Model saved to: /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/mlp_models/mlp_ae30d_medtok_model_opioid_sample5M_grace15_minspell7_ae_censoring.pt
+Log saved to: /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/mlp_models/mlp_ae30d_medtok_model_opioid_sample5M_grace15_minspell7_ae_censoring.txt
+Done.
