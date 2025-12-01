@@ -139,7 +139,11 @@ def main():
     else:
         print("No BH-significant pairs with elevated AE rate.\n")
 
-    # Save pair CSVs, sorting in a similar manner as the prints
+    # Save pair CSVs, sorting in a similar manner as the prints. First remove rows that do not have N02A in any drugx column
+    drug_columns = [col for col in pair_summary.columns if col.startswith('drug')]
+    pair_summary = pair_summary[pair_summary[drug_columns].apply(lambda row: row.astype(str).str.contains('N02A').any(), axis=1)]
+    signal_pairs = signal_pairs[signal_pairs[drug_columns].apply(lambda row: row.astype(str).str.contains('N02A').any(), axis=1)]
+
     pair_summary.sort_values("ae_prop", ascending=False).to_csv("drug_pairs_ae_min200_with_BH.csv", index=False)
     signal_pairs.sort_values("n_ae", ascending=False).to_csv("drug_pairs_ae_BH_significant.csv", index=False)
 
@@ -235,7 +239,11 @@ def main():
     else:
         print("No BH-significant trios with elevated AE rate.\n")
 
-    # Save trio CSVs, sorting in a similar manner as the prints
+    # Save trio CSVs, sorting in a similar manner as the prints. First remove rows that do not have N02A in any drugx column
+    drug_columns = [col for col in trio_summary.columns if col.startswith('drug')]
+    trio_summary = trio_summary[trio_summary[drug_columns].apply(lambda row: row.astype(str).str.contains('N02A').any(), axis=1)]
+    signal_trios = signal_trios[signal_trios[drug_columns].apply(lambda row: row.astype(str).str.contains('N02A').any(), axis=1)]
+    
     trio_summary.sort_values("ae_prop", ascending=False).to_csv("drug_trios_ae_min200_with_BH.csv", index=False)
     signal_trios.sort_values("n_ae", ascending=False).to_csv("drug_trios_ae_BH_significant.csv", index=False)
 
