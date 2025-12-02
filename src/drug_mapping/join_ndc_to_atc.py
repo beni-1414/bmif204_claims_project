@@ -28,7 +28,8 @@ def main():
         "NDC_to_ATC_levels1234_clean.csv"
     )
 
-    output_path = parquet_path.with_stem(parquet_path.stem + "_ATC")
+    # remove _raw suffix
+    output_path = parquet_path.with_stem(parquet_path.stem.replace("_raw", ""))
 
     # -----------------------------
     # Load mapping (small, once)

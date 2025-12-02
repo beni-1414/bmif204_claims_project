@@ -23,21 +23,21 @@ def chunked(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i+n]
 
-opioid_ndcs_path = Path("data/opioid_ndc11_list.csv")
-opioid_df = pd.read_csv(opioid_ndcs_path, dtype=str)
-opioid_ndcs = opioid_df["ndc11"].dropna().unique().tolist()
+query_ndcs_path = Path("data/opioid_ndc11_list.csv")
+query_ndcs_df = pd.read_csv(query_ndcs_path, dtype=str)
+query_ndcs = query_ndcs_df["ndc11"].dropna().unique().tolist()
 
-# Build insert queries for the ndc11 codes (a table OpioidNdc with a single column ndc11code). Max insert size is 1000 rows, chunk accordingly.
+# Build insert queries for the ndc11 codes (a table QueryDrugs with a single column ndc11code). Max insert size is 1000 rows, chunk accordingly.
 ndc_insert_chunks = []
-for chunk in chunked(opioid_ndcs, 900):
+for chunk in chunked(query_ndcs, 900):
     vals = ",".join(f"('{x}')" for x in chunk)
-    ndc_insert_chunks.append(f"INSERT INTO bef299.dbo.OpioidNdc (ndc11code) VALUES {vals};")
+    ndc_insert_chunks.append(f"INSERT INTO bef299.dbo.QueryDrugs (ndc11code) VALUES {vals};")
 
 conn = pyodbc.connect(conn_str)
 with conn.cursor() as cursor:
     try:
         cursor.execute("""
-            CREATE TABLE bef299.dbo.OpioidNdc (
+            CREATE TABLE bef299.dbo.QueryDrugs (
                 ndc11code VARCHAR(11) NOT NULL PRIMARY KEY
             );
         """)
@@ -45,11 +45,11 @@ with conn.cursor() as cursor:
             pass  # Table probably already exists
     conn.commit()
     # Clear existing table
-    cursor.execute("TRUNCATE TABLE bef299.dbo.OpioidNdc;")
+    cursor.execute("TRUNCATE TABLE bef299.dbo.QueryDrugs;")
     conn.commit()
     # Insert new values
     for insert_query in ndc_insert_chunks:
         cursor.execute(insert_query)
         conn.commit()
 conn.close()
-print(f"Inserted {len(opioid_ndcs)} NDC11 codes into bef299.dbo.OpioidNdc in database {database}.")
+print(f"Inserted {len(query_ndcs)} NDC11 codes into bef299.dbo.QueryDrugs in database {database}.")

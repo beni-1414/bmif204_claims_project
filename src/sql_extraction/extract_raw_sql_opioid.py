@@ -30,7 +30,7 @@ SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/
 PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
 (PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
 
-OUT_RX = SCRATCH_PATH / f"rx_fills_opioid{suffix}.parquet"
+OUT_RX = SCRATCH_PATH / f"rx_fills_opioid{suffix}_raw.parquet"
 OUT_AE = SCRATCH_PATH / f"adverse_events_opioid{suffix}.parquet"
 OUT_DEMO = SCRATCH_PATH / f"demographics_opioid{suffix}.parquet"
 OUT_ENROLL = SCRATCH_PATH / f"enrollment_opioid{suffix}.parquet"

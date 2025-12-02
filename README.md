@@ -69,7 +69,13 @@ This code clusters the ICD10 codes extracted into a `_clustered` parquet file re
 #### `exploration_final.ipynb`
 Run the notebook to get descriptive stats and plots. Expand with more plots as needed.
 
-### Whole pipeline execution
+## Usage
+### Environment
+Create a venv with the requirements.txt file. If running on O2, be sure to load the necessary modules: gcc python unixODBC freetds msodbcsql17.
+
+Queries to SQL can only be run from an interactive session, either on terminal or through jupyter or VSCode. In a terminal, run kinit to connect to innovalon. In case of issues, refer to Inovalon Harvard [documentation](https://github.com/ccb-hms/HarvardInovalonUserGuide).
+
+### Pipeline
 First, extract data from SQL. This process is a bit tricky. 
 
 1. Insert the query drugs (in our study, the opioid ndcs) into a table:
@@ -81,9 +87,9 @@ python src/sql_extraction/prepare_database_for_insertion --db 5
 ```sql
 SELECT
     r.MemberUID
-INTO bef299.dbo.elegible_members
+INTO <YOUR_USERNAME>.dbo.elegible_members
 FROM RxClaim r
-LEFT JOIN dbo.OpioidNdc o
+LEFT JOIN dbo.QueryDrugs o
     ON r.ndc11code = o.ndc11code
 WHERE r.supplydayscount IS NOT NULL
 GROUP BY r.MemberUID
@@ -97,19 +103,24 @@ HAVING
 python src/sql_extraction/extract_raw_sql_opioid.py --suffix "_sample5M" --db 5
 ```
 
-4. Generate spells and labels. Modify the pipeline.sbatch file as needed, making sure to add a rellevant suffix, and submit via (it takes about 30 mins on the 1M sample, a lot more on the 5M, be sure to ask enough memory to avoid OOM error, although the code already does many memory management tricks):
+4. Run the script to add the drug mappings to the RXfills to be able to cluster by ATC class:
+```bash
+python src/drug_mapping/join_ndc_to_atc.py input.parquet
+```
+
+5. Generate spells and labels. Modify the pipeline.sbatch file as needed, making sure to add a rellevant suffix, and submit via (it takes about 30 mins on the 1M sample, a ~3h on the 5M, be sure to ask enough memory to avoid OOM error, although the code already does many memory management tricks):
 ```bash
 sbatch src/spell_generation/pipeline.sbatch
 ```
 
-5. Manually run the ICD10 extraction from SQL (it can't be run in a job, and if it takes longer than a few seconds to start it means the db is locked by someone else. Recommend running at night when no one is using it):
+6. Manually run the ICD10 extraction from SQL (it can't be run in a job, and if it takes longer than a few seconds to start it means the db is locked by someone else. Recommend running at night when no one is using the db):
 ```bash
 python src/sql_extraction/extract_icd10_codes.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
 
-6. Run the ICD10 postprocessing (is quite fast):
+7. Run the ICD10 postprocessing (is quite fast):
 ```bash
 python src/icd10_postprocessing.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
 
-You are ready to analyse and run analysis!
+8. With this, you are ready to run the exploration notebook, train models, etc. Be sure to use the final_preprocessing script on top of whatever you do to get the final features and apply the necessary filters for data leakage prevention and quality control.
