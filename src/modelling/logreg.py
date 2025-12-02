@@ -112,7 +112,7 @@ icd_classes = np.array(mlb_icd.classes_)
 print("Total ICD10 group features:", len(icd_classes))
 
 # Frequency filter: keep ICD groups that appear in at least min_icd_freq spells
-min_icd_freq = 500   # you can tune this (e.g., 200, 1000, etc.)
+min_icd_freq = 500 # adjust as needed based on dataset size
 icd_freq = np.asarray(X_icd_full.sum(axis=0)).ravel()
 keep_mask = icd_freq >= min_icd_freq
 
@@ -178,11 +178,10 @@ pos = y_train.sum()
 neg = len(y_train) - pos
 print(f"Train positives: {pos}, negatives: {neg}")
 
-# You can try both L2 and elastic-net; here's L2 first (faster, stable)
 logreg = LogisticRegression(
     penalty="l2",
     solver="saga",
-    max_iter=3000,          # adjust if you see convergence warnings
+    max_iter=3000,          # adjust if convergence warnings arise
     n_jobs=8,
     class_weight="balanced",  # compensates for imbalance
     verbose=1,
@@ -262,7 +261,7 @@ if BOOTSTRAP:
     # ---------------------------------------------------------------------
     # 13. Summarize ORs and 95% CIs
     # ---------------------------------------------------------------------
-    coef_orig = logreg.coef_.ravel()  # from your original model fit
+    coef_orig = logreg.coef_.ravel()
     coef_mean = coefs_boot.mean(axis=0)
     coef_lower = np.percentile(coefs_boot, 2.5, axis=0)
     coef_upper = np.percentile(coefs_boot, 97.5, axis=0)

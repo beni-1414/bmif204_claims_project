@@ -43,7 +43,7 @@ SUFFIX = args.suffix
 db = f"InovalonSample{args.db}M"
 
 N_BUCKETS = 100               # adjust up/down for batch size (more buckets = smaller batches)
-CHUNKSIZE = 200_000          # rows per fetch; tune for your RAM
+CHUNKSIZE = 200_000          # rows per fetch
 COMPRESSION = "snappy"
 
 SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")

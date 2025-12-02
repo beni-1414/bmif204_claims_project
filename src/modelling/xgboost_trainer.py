@@ -205,7 +205,6 @@ elif POS_NEG_OPTIMIZE:
 
     print("Starting hyperparameter search...")
 
-    # Small manual grid – you can tweak these values
     param_grid = [
         {"scale_pos_weight": scale} for scale in [0.05, 0.1, 0.15, 0.2]
     ]
@@ -268,7 +267,7 @@ elif POS_NEG_OPTIMIZE:
     best_auc_roc = roc_auc_score(y_valid, best_y_valid_proba)
     print(f"Best AUC-ROC: {best_auc_roc:.4f}")
 
-    # Choose an arbitrary initial threshold (you'll tune later)
+    # Arbitrary initial threshold
     threshold = 0.01
     y_valid_pred = (best_y_valid_proba >= threshold).astype(int)
     print(f"\nClassification report at threshold = {threshold}:")
@@ -288,7 +287,6 @@ else:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"training_log{SUFFIX}.txt"
 
-    # Small manual grid – you can tweak these values
     param_grid = [
         {"max_depth": 3, "min_child_weight": 5,  "subsample": 0.8, "colsample_bytree": 0.8},
         {"max_depth": 3, "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8},
@@ -373,7 +371,7 @@ else:
     best_auc_roc = roc_auc_score(y_valid, best_y_valid_proba)
     print(f"Best AUC-ROC: {best_auc_roc:.4f}")
 
-    # Choose an arbitrary initial threshold (you'll tune later)
+    # Arbitrary initial threshold
     threshold = 0.01
     y_valid_pred = (best_y_valid_proba >= threshold).astype(int)
     print(f"\nClassification report at threshold = {threshold}:")

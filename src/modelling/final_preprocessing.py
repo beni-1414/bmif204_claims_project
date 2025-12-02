@@ -198,7 +198,6 @@ def final_common_preprocessing(spells: pd.DataFrame, dem: pd.DataFrame, icd: pd.
     df = df[df["age"] <= 120]
     print(f"Dropped {before_age_filter_len - len(df)} rows with age > 120.")
 
-    # You can add more later (e.g., spell_length_days, utilization, etc.)
     numeric_cols = ["age"]
     for col in numeric_cols:
         if col not in df.columns:

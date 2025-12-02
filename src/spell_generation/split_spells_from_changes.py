@@ -29,7 +29,7 @@ Rules
 - `spell_id` remains the original spell identifier.
 
 USAGE
-  python split_spells_simple.py
+  python split_spells_from_changes.py
   (Edit the file paths below if needed.)
 """
 from __future__ import annotations
