@@ -70,6 +70,12 @@ This code clusters the ICD10 codes extracted into a `_clustered` parquet file re
 Run the notebook to get descriptive stats and plots. Expand with more plots as needed.
 
 ## Usage
+### Environment
+Create a venv with the requirements.txt file. If running on O2, be sure to load the necessary modules: gcc python unixODBC freetds msodbcsql17.
+
+Queries to SQL can only be run from an interactive session, either on terminal or through jupyter or VSCode. In a terminal, run kinit to connect to innovalon. In case of issues, refer to Inovalon Harvard [documentation](https://github.com/ccb-hms/HarvardInovalonUserGuide).
+
+### Pipeline
 First, extract data from SQL. This process is a bit tricky. 
 
 1. Insert the query drugs (in our study, the opioid ndcs) into a table:
