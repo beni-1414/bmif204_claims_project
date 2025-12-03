@@ -321,7 +321,9 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # ---------- AE labeling ----------
     log("Labeling spells with adverse events (takes a few minutes)...")
+    # Move all ae dates one day into the past, to avoid same-day overlaps with drug changes (assume you visit the hospital because you have an AE, not have an AE because you visit the hospital and get a new drug)
     ae["event_date"] = pd.to_datetime(ae["event_date"])
+    ae["event_date"] = ae["event_date"] - pd.Timedelta(days=1)
     ae_groups = {m: g for m, g in ae.groupby("MemberUID", sort=False)}
 
     valid_spells = []

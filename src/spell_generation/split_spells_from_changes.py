@@ -170,6 +170,11 @@ def split_spells(spells: pd.DataFrame, changes: pd.DataFrame) -> pd.DataFrame:
         if not isinstance(add_dates, list):
             add_dates = list(add_dates)
 
+        # Move the AE date one day earlier - This change was applied in spell_generation.py already, so it is commented out. It is left here in case the study is reproduced and there are minor differences in timing for these events due to unaccounted factors.
+        # if pd.notna(spell["first_ae_date"]) and spell["first_ae_date"] > spell["entry_date"]:
+        #     spell = spell.copy()
+        #     spell["first_ae_date"] = spell["first_ae_date"] - pd.Timedelta(days=1)
+
         out_rows.extend(_build_add_segments_for_spell(spell, add_dates))
 
     out = pd.DataFrame(out_rows)
