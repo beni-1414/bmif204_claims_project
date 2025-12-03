@@ -25,7 +25,7 @@ def main():
     base = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")
 
     input_suffix = "_opioid_sample5M"
-    output_suffix = "_opioid_sample5M_grace15_minspell7_ae_censoring"
+    output_suffix = "_FINAL"
 
     split_spells = pd.read_parquet(base / f"split_spells{output_suffix}.parquet")
     demographics = pd.read_parquet(base / f"demographics{input_suffix}.parquet")
