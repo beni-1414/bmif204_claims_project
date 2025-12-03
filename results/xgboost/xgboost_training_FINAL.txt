@@ -1,0 +1,127 @@
+Loading data...
+dem shape:    (824793, 6)
+spells shape: (1791008, 14)
+icd shape:    (1228607, 4)
+spells after drug_combo filter: (1577817, 14)
+spells after first_ae_date = entry_date filter: (1574785, 14)
+spells after moving first_ae_date one day earlier: (1574785, 14)
+spells after short no-AE spell filter: (928171, 14) (removed 41.06% rows)
+Number of spells with AE 14462
+Number of AE within 30 days: 11902
+AE within 30 days rate: 0.012823068163086327
+Spells before deduplication: 928171
+Spells after deduplication: 847894
+Number of AE within 30 days after dedup: 11896
+Merging tables...
+After merging demographics, df shape: (847894, 22)
+Combined df shape: (847894, 23)
+Number of AE within 30 days after merge: 11896
+Number of rows with NaN in birthyear: 2118
+Number of rows with None in gender: 0
+Filtering out 905 rows (0.11%) where AE ICD prefix appears in icd10_codes (potential leakage).
+Number of AE within 30 days after leakage filter: 11092
+Rows remaining after leakage filter: 846989
+Dropped 32577 rows with age > 120.
+Number of AE within 30 days after dropping missing essential info: 10898
+AE within 30 days rate: 0.013381433475931102
+Final df shape: (814412, 24)
+Fitting MultiLabelBinarizer for drugs...
+Number of drug classes: 200
+Fitting MultiLabelBinarizer for ICD10 groups...
+Number of ICD10 groups: 1986
+One-hot encoding demographics...
+Stacking feature matrices...
+Final feature matrix shape: (814412, 2200)
+Splitting train/validation...
+Train positives: 8718, negatives: 642811, scale_pos_weight: 73.73
+Training XGBoost...
+[0]     validation_0-aucpr:0.03153
+[50]    validation_0-aucpr:0.03800
+[100]   validation_0-aucpr:0.03887
+[150]   validation_0-aucpr:0.03929
+[200]   validation_0-aucpr:0.03947
+[250]   validation_0-aucpr:0.03963
+[300]   validation_0-aucpr:0.03959
+[350]   validation_0-aucpr:0.03960
+[399]   validation_0-aucpr:0.03979
+Evaluating...
+AUC-PR:  0.0518
+AUC-ROC: 0.7672
+Saving model and encoders...
+Done.
+
+F1-max threshold: 0.4384
+Precision at F1-max: 0.0888
+Recall at F1-max:    0.1431
+F1-max:              0.1096
+Precision ≥ 0.05: threshold=0.2929, precision=0.0500, recall=0.3372
+Precision ≥ 0.10: threshold=0.4903, precision=0.1000, recall=0.0977
+Precision ≥ 0.20: threshold=0.6780, precision=0.2000, recall=0.0229
+
+
+
+SHAP values shape: (5000, 2200)
+(2200, 2200)
+Loading data...
+dem shape:    (824793, 6)
+spells shape: (1791008, 14)
+icd shape:    (1228607, 4)
+spells after drug_combo filter: (1577817, 14)
+spells after first_ae_date = entry_date filter: (1574785, 14)
+spells after moving first_ae_date one day earlier: (1574785, 14)
+spells after short no-AE spell filter: (928171, 14) (removed 41.06% rows)
+Number of spells with AE 14462
+Number of AE within 30 days: 11902
+AE within 30 days rate: 0.012823068163086327
+Spells before deduplication: 928171
+Spells after deduplication: 847894
+Number of AE within 30 days after dedup: 11896
+Merging tables...
+After merging demographics, df shape: (847894, 22)
+Combined df shape: (847894, 23)
+Number of AE within 30 days after merge: 11896
+Number of rows with NaN in birthyear: 2118
+Number of rows with None in gender: 0
+Filtering out 905 rows (0.11%) where AE ICD prefix appears in icd10_codes (potential leakage).
+Number of AE within 30 days after leakage filter: 11092
+Rows remaining after leakage filter: 846989
+Dropped 32577 rows with age > 120.
+Number of AE within 30 days after dropping missing essential info: 10898
+AE within 30 days rate: 0.013381433475931102
+Final df shape: (814412, 24)
+Fitting MultiLabelBinarizer for drugs...
+Number of drug classes: 200
+Fitting MultiLabelBinarizer for ICD10 groups...
+Number of ICD10 groups: 1986
+One-hot encoding demographics...
+Stacking feature matrices...
+Final feature matrix shape: (814412, 2200)
+Splitting train/validation...
+Train positives: 8718, negatives: 642811, scale_pos_weight: 73.73
+Model loaded.
+(162883, 2200) (162883,)
+F1-max threshold: 0.4384
+Precision at F1-max: 0.0888
+Recall at F1-max:    0.1431
+F1-max:              0.1096
+Precision ≥ 0.05: threshold=0.2929, precision=0.0500, recall=0.3372
+Precision ≥ 0.10: threshold=0.4903, precision=0.1000, recall=0.0977
+Precision ≥ 0.20: threshold=0.6780, precision=0.2000, recall=0.0229
+Top 0% (n=162):
+  Precision@k: 0.2037
+  Recall@k:    0.0151
+
+Top 1% (n=1628):
+  Precision@k: 0.1050
+  Recall@k:    0.0784
+
+Top 5% (n=8144):
+  Precision@k: 0.0632
+  Recall@k:    0.2362
+
+Top 10% (n=16288):
+  Precision@k: 0.0472
+  Recall@k:    0.3523
+
+Baseline AE rate: 0.013383839934185888
+Enrichment in top 5%: 4.724857665236748

@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -p short
 #SBATCH -t 00:10:00
-#SBATCH -c 8
-#SBATCH --mem=32G
+#SBATCH -c 4
+#SBATCH --mem=16G
 #SBATCH --job-name=xgboost_trainings
 #SBATCH --output=xgboost_training_%j.log
 #SBATCH --error=xgboost_training_%j.err

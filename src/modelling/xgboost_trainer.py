@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument("--title", type=str, default="XGBoost AE30d model",
                         help="Description/title for this training run")
     parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
+    parser.add_argument("--suffix", type=str, default="_FINAL", help="Suffix for input files")
     parser.add_argument("--single_train", action="store_true",
                         help="If set, do a single training run instead of hyperparameter search")
     parser.add_argument("--pos-neg-optimize", action="store_true",
@@ -41,7 +42,7 @@ POS_NEG_OPTIMIZE = args.pos_neg_optimize
 # ---------------------------------------------------------------------
 # 1. Paths & constants
 # ---------------------------------------------------------------------
-SUFFIX = f"_opioid_sample{args.db}M_grace15_minspell7_ae_censoring"
+SUFFIX = args.suffix
 BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50")
 
 demographics_path = BASE / f"demographics_opioid_sample{args.db}M.parquet"
@@ -384,7 +385,5 @@ else:
 # ---------------------------------------------------------------------
 print("Saving model and encoders...")
 joblib.dump(best_model, BASE / f"xgb_ae30d_model{SUFFIX}.joblib")
-joblib.dump(mlb_drugs, BASE / f"mlb_drugs{SUFFIX}.joblib")
-joblib.dump(mlb_icd, BASE / f"mlb_icd{SUFFIX}.joblib")
 
 print("Done.")
