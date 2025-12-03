@@ -34,6 +34,10 @@ def final_common_preprocessing(spells: pd.DataFrame, dem: pd.DataFrame, icd: pd.
     spells = spells[spells["drug_combo"].map(len) >= 3]
     print(f"spells after drug_combo filter: {spells.shape}")
 
+    # Filter spells with first_ae_date = entry_date - This should not be necessary once the full pipeline is rerun, but it is a good safety check
+    spells = spells[~((spells["first_ae_date"] == spells["entry_date"]) & pd.notna(spells["first_ae_date"]))]
+    print(f"spells after first_ae_date = entry_date filter: {spells.shape}")
+
     ## NEW: filter out all spells with length shorter than 15 days that have no AE
     initial_len = len(spells)
     spells = spells[~((spells["had_ae"] == False) &
