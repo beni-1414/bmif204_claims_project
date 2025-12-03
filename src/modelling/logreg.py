@@ -23,6 +23,7 @@ def parse_args():
 
     parser.add_argument("--title", type=str, default="LogReg AE30d model",
                         help="Description/title for this training run")
+    parser.add_argument("--suffix", type=str, default="_FINAL", help="Suffix for input files")
     parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
     parser.add_argument("--bootstrap", action="store_true", help="Whether to perform bootstrap CIs for ORs")
 
@@ -36,7 +37,7 @@ BOOTSTRAP = args.bootstrap
 # ---------------------------------------------------------------------
 # 1. Paths & constants
 # ---------------------------------------------------------------------
-SUFFIX = f"_opioid_sample{args.db}M_grace15_minspell7_ae_censoring"
+SUFFIX = args.suffix
 BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50")
 
 demographics_path = BASE / f"demographics_opioid_sample{args.db}M.parquet"
