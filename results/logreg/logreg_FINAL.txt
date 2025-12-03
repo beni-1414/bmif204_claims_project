@@ -1,0 +1,25 @@
+
+
+max_iter reached after 1053 seconds
+/home/bef299/bmif204/bmif204_claims_project/.venv/lib/python3.13/site-packages/sklearn/linear_model/_sag.py:348: ConvergenceWarning: The max_iter was reached which means the coef_ did not converge
+  warnings.warn(
+Saved logistic regression model to: /n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/logreg_model_FINAL.joblib
+Evaluating logistic regression...
+LogReg AUC-PR:  0.0441
+LogReg AUC-ROC: 0.7441
+
+Top 0.10% (n=162):
+  Precision@k: 0.1605
+  Recall@k:    0.0119
+
+Top 1.00% (n=1628):
+  Precision@k: 0.0940
+  Recall@k:    0.0702
+
+Top 5.00% (n=8144):
+  Precision@k: 0.0581
+  Recall@k:    0.2170
+
+Top 10.00% (n=16288):
+  Precision@k: 0.0457
+  Recall@k:    0.3413
