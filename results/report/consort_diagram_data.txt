@@ -8,4 +8,4 @@ SIZE: 634,355 spells, 239,868 patients
 ACTION: Split spells on drug regimen changes
 SIZE: 1,581,017 spells, 239,868 patients
 ACTION: Preprocessing for data quality, elegibility enforcement and data leakage prevention
-FINAL SIZE: 818,382 spells, 207,388 patients, 13959/818,382 spells with AE
+FINAL SIZE: 814,412 spells, 206,664 patients, 10,898/814,412 spells with AE
