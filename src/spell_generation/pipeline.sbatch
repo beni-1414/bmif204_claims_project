@@ -24,13 +24,12 @@ echo "[INFO] Starting final run..."
 python src/spell_generation/spell_generation.py \
     --input_suffix "_sample5M" \
     --output_suffix "_sample5M_grace15_minspell7_ae_censoring" \
-    --opioid_flag True \
     --min_concurrent 3 \
     --grace_period 15 \
     --min_spell_len 7
 
 python src/spell_generation/split_spells_from_changes.py \
-    --suffix "_opioid_sample5M_grace15_minspell7_ae_censoring"
+    --suffix "_sample5M_grace15_minspell7_ae_censoring"
 
 python src/spell_generation/drug_combo_labeling.py \
-    --suffix "_opioid_sample5M_grace15_minspell7_ae_censoring"
+    --suffix "_sample5M_grace15_minspell7_ae_censoring"

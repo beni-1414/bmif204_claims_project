@@ -15,10 +15,11 @@ Usage example:
 python spell_generation.py \
     --output_suffix "_sample1M" \
     --input_suffix "_sample1M" \
-    --opioid_flag True \
     --min_concurrent 3 \
     --grace_period 21 \
     --min_spell_len 51
+
+NOTE: the is_op variable refers to wether the drug is in the query drug list (e.g., opioids), not necessarily opioids.
 """
 
 import pandas as pd
@@ -36,14 +37,14 @@ def parse_args():
                         help="Suffix used in output filenames (e.g., '_sample1M' or '')")
     parser.add_argument("--input_suffix", type=str, default="_sample1M",
                         help="Suffix used in input filenames (e.g., '_sample1M' or '')")
-    parser.add_argument("--opioid_flag", type=lambda x: str(x).lower() in ("1", "true", "yes"),
-                        default=False, help="If True, restrict to opioid spells only")
     parser.add_argument("--min_concurrent", type=int, default=3,
                         help="Minimum number of concurrent drugs defining a spell")
     parser.add_argument("--grace_period", type=int, default=21,
                         help="Extension period (days) after last fill below threshold")
     parser.add_argument("--min_spell_len", type=int, default=None,
                         help="Minimum total spell length (if not provided, 30)")
+    parser.add_argument("--query-drugs-path", type=str, default="data/opioid_ndc11_list.csv",
+                        help="Path to CSV file containing list of query drug NDC11 codes")
 
     return parser.parse_args()
 
@@ -53,10 +54,10 @@ args = parse_args()
 
 INPUT_SUFFIX = args.input_suffix
 OUTPUT_SUFFIX = args.output_suffix
-OPIOID_FLAG = args.opioid_flag
 MIN_CONCURRENT = args.min_concurrent
 GRACE_PERIOD = args.grace_period
 MIN_SPELL_LEN = args.min_spell_len or 30
+QUERY_DRUGS_PATH = args.query_drugs_path
 
 
 def log(msg: str):
@@ -77,7 +78,7 @@ def build_spells_for_member(df):
         ends = g["end"].tolist()      # list of Timestamps
         intervals = list(zip(starts, ends))
         intervals.sort(key=lambda x: x[0])  # sort by start time
-        is_op = int(g["is_opioid"].iloc[0])  # NEW: opioid flag for this drug/ndc
+        is_op = int(g["is_query_drug"].iloc[0]) 
         merged = []
         cur_start, cur_end = intervals[0]
         for s, e in intervals[1:]:
@@ -85,9 +86,9 @@ def build_spells_for_member(df):
             if s <= cur_end + timedelta(days=1 + GRACE_PERIOD):
                 cur_end = max(cur_end, e)
             else:
-                merged.append((cur_start, cur_end, is_op))  # NEW: carry opioid flag
+                merged.append((cur_start, cur_end, is_op))
                 cur_start, cur_end = s, e
-        merged.append((cur_start, cur_end, is_op))  # NEW: carry opioid flag
+        merged.append((cur_start, cur_end, is_op))
         drug_intervals[ndc] = merged  # save
 
         # Mark start (+1) and end (-1) of each merged interval
@@ -220,9 +221,6 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
 
     # ---------- Load data ----------
     global INPUT_SUFFIX, OUTPUT_SUFFIX
-    if OPIOID_FLAG:
-        INPUT_SUFFIX = "_opioid" + INPUT_SUFFIX
-        OUTPUT_SUFFIX = "_opioid" + OUTPUT_SUFFIX
     log(f"Loading Parquet files from: {base}")
     rx = pd.read_parquet(base / f"rx_fills{INPUT_SUFFIX}.parquet", columns=["MemberUID", "filldate", "ndc11code", "supplydayscount", "atc_3_code"])
     ae = pd.read_parquet(base / f"adverse_events{INPUT_SUFFIX}.parquet")
@@ -241,11 +239,11 @@ def main(scratch_dir="/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50
     n_members = rx["MemberUID"].nunique()
     log(f"Unique members in Rx: {n_members:,}")
 
-    opioid_df = pd.read_csv("data/opioid_ndc11_list.csv", dtype=str)
-    opioid_set = set(opioid_df["ndc11"].astype(str).str.strip())
+    query_drug_df = pd.read_csv(QUERY_DRUGS_PATH, dtype=str)
+    query_drug_set = set(query_drug_df["ndc11"].astype(str).str.strip())
 
-    # Tag opioid fills once
-    rx["is_opioid"] = rx["ndc11code"].astype(str).isin(opioid_set)
+    # Tag query drug fills once
+    rx["is_query_drug"] = rx["ndc11code"].astype(str).isin(query_drug_set)
 
     # ✅ DO NOT wrap in list(...) – keep this as a lazy iterator
     members_iter = rx.groupby("MemberUID", sort=False)

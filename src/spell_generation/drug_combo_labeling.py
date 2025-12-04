@@ -11,7 +11,7 @@ def parse_args():
     parser.add_argument(
         "--suffix",
         type=str,
-        default="_opioid_sample1M_grace15_minspell7_ae_censoring",
+        default="_sample1M_grace15_minspell7_ae_censoring",
         help="Suffix used in filenames (e.g., '_sample1M' or '')",
     )
 

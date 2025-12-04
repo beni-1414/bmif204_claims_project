@@ -1,55 +1,100 @@
-import pandas as pd
-from pathlib import Path
 import argparse
+from pathlib import Path
+
+import pandas as pd
 import pyodbc
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
+    parser = argparse.ArgumentParser(
+        description="Load NDC11 codes into bef299.dbo.QueryDrugs for opioid study"
+    )
 
-    parser.add_argument("--db", type=int, default=1, help="Database size to connect to (1 for 1M, 5 for 5M)")
+    parser.add_argument(
+        "--db-user",
+        type=str,
+        required=True,
+        help="Database name to connect to (e.g., 'InovalonSample1M').",
+    )
 
-    args = parser.parse_args()
-    return args
+    parser.add_argument(
+        "--query-drugs-path",
+        type=Path,
+        default=Path("data/opioid_ndc11_list.csv"),
+        help="Path to CSV file containing an 'ndc11' column.",
+    )
 
-# ------------------------------
-# DB CONNECTION
-# ------------------------------
-args = parse_args()
-database = f"InovalonSample{args.db}M"
-conn_str = f'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database={database};TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
+    return parser.parse_args()
 
 
 def chunked(lst, n):
+    """Yield successive n-sized chunks from a list."""
     for i in range(0, len(lst), n):
-        yield lst[i:i+n]
+        yield lst[i : i + n]
 
-query_ndcs_path = Path("data/opioid_ndc11_list.csv")
-query_ndcs_df = pd.read_csv(query_ndcs_path, dtype=str)
-query_ndcs = query_ndcs_df["ndc11"].dropna().unique().tolist()
 
-# Build insert queries for the ndc11 codes (a table QueryDrugs with a single column ndc11code). Max insert size is 1000 rows, chunk accordingly.
-ndc_insert_chunks = []
-for chunk in chunked(query_ndcs, 900):
-    vals = ",".join(f"('{x}')" for x in chunk)
-    ndc_insert_chunks.append(f"INSERT INTO bef299.dbo.QueryDrugs (ndc11code) VALUES {vals};")
+def load_query_drugs(db_user: str, query_drugs_path: Path):
+    """
+    Load NDC11 codes from a CSV into {db_user}.dbo.QueryDrugs in the specified database.
+    """
+    # Connection string: connect directly to the provided database
+    conn_str = (
+        "DRIVER=ODBC Driver 17 for SQL Server;"
+        "Server=CCBWSQLP01.med.harvard.edu;"
+        "Trusted_Connection=Yes;"
+        f"Database={db_user};"
+        "TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU"
+    )
 
-conn = pyodbc.connect(conn_str)
-with conn.cursor() as cursor:
-    try:
-        cursor.execute("""
-            CREATE TABLE bef299.dbo.QueryDrugs (
-                ndc11code VARCHAR(11) NOT NULL PRIMARY KEY
-            );
-        """)
-    except Exception as e:
-            pass  # Table probably already exists
-    conn.commit()
-    # Clear existing table
-    cursor.execute("TRUNCATE TABLE bef299.dbo.QueryDrugs;")
-    conn.commit()
-    # Insert new values
-    for insert_query in ndc_insert_chunks:
-        cursor.execute(insert_query)
+    # Read NDC list
+    query_ndcs_df = pd.read_csv(query_drugs_path, dtype=str)
+    query_ndcs = query_ndcs_df["ndc11"].dropna().unique().tolist()
+
+    # Build insert queries (max ~1000 rows per INSERT; use 900 for safety)
+    ndc_insert_chunks = []
+    for chunk in chunked(query_ndcs, 900):
+        values = ",".join(f"('{x}')" for x in chunk)
+        ndc_insert_chunks.append(
+            f"INSERT INTO {db_user}.dbo.QueryDrugs (ndc11code) VALUES {values};"
+        )
+
+    conn = pyodbc.connect(conn_str)
+    with conn.cursor() as cursor:
+        # Create table if needed
+        try:
+            cursor.execute(
+                f"""
+                CREATE TABLE {db_user}.dbo.QueryDrugs (
+                    ndc11code VARCHAR(11) NOT NULL PRIMARY KEY
+                );
+                """
+            )
+        except Exception:
+            # Table probably already exists
+            pass
+
         conn.commit()
-conn.close()
-print(f"Inserted {len(query_ndcs)} NDC11 codes into bef299.dbo.QueryDrugs in database {database}.")
+
+        # Clear existing table
+        cursor.execute(f"TRUNCATE TABLE {db_user}.dbo.QueryDrugs;")
+        conn.commit()
+
+        # Insert new values
+        for insert_query in ndc_insert_chunks:
+            cursor.execute(insert_query)
+            conn.commit()
+
+    conn.close()
+    print(
+        f"Inserted {len(query_ndcs)} NDC11 codes into {db_user}.dbo.QueryDrugs "
+        f"in database {db_user}."
+    )
+
+
+def main():
+    args = parse_args()
+    load_query_drugs(db_user=args.db_user, query_drugs_path=args.query_drugs_path)
+
+
+if __name__ == "__main__":
+    main()

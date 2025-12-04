@@ -1,6 +1,10 @@
 from pathlib import Path
 import pandas as pd
 
+"""
+Simple validation script to check existence and readability of parquet files. Useful for verifying that expected output files were generated correctly.
+"""
+
 # Paths to the parquet files you expect to generate
 SUFFIX = "_opioid_sample5M_grace15_minspell7_ae_censoring"
 BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")

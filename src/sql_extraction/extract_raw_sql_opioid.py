@@ -1,82 +1,76 @@
+import argparse
+from pathlib import Path
+
 import pyodbc
 import pandas as pd
-from pathlib import Path
-import argparse
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract raw SQL data for opioid study")
 
-    parser.add_argument("--suffix", type=str, default="_sample5M",
-                        help="Suffix used in filenames (e.g., '_sample1M' or '')")
-    parser.add_argument("--db", type=int, default=5, help="Database size to connect to (1 for 1M, 5 for 5M)")
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default="_sample5M",
+        help="Suffix used in filenames (e.g., '_sample1M' or '').",
+    )
+    parser.add_argument(
+        "--db",
+        type=int,
+        default=5,
+        help="Database size marker (1 for 1M, 5 for 5M) used in elegible_members table name.",
+    )
+    parser.add_argument(
+        "--path",
+        type=Path,
+        default=Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/"),
+        help="Scratch path where parquet outputs will be written.",
+    )
+    parser.add_argument(
+        "--db-user",
+        type=str,
+        required=True,
+        help="Database user name to connect to (e.g., 'InovalonSample5M').",
+    )
+    parser.add_argument(
+        "--icd-codes-path",
+        type=Path,
+        required=True,
+        help="Path to the ICD codes file relative to the project root.",
+    )
 
-    args = parser.parse_args()
-    return args
-
-# ------------------------------
-# DB CONNECTION
-# ------------------------------
-args = parse_args()
-suffix = args.suffix
-database = f"InovalonSample{args.db}M"
-conn_str = f'DRIVER=ODBC Driver 17 for SQL Server;Server=CCBWSQLP01.med.harvard.edu;Trusted_Connection=Yes;Database={database};TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU'
-
-conn = pyodbc.connect(conn_str)
-
-# ------------------------------
-# PATH CONFIG
-# ------------------------------
-SCRATCH_PATH = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50/")
-PROJECT_PATH = Path("~/bmif204/bmif204_claims_project/").expanduser()
-(PROJECT_PATH / "queries").mkdir(parents=True, exist_ok=True)
-
-OUT_RX = SCRATCH_PATH / f"rx_fills_opioid{suffix}_raw.parquet"
-OUT_AE = SCRATCH_PATH / f"adverse_events_opioid{suffix}.parquet"
-OUT_DEMO = SCRATCH_PATH / f"demographics_opioid{suffix}.parquet"
-OUT_ENROLL = SCRATCH_PATH / f"enrollment_opioid{suffix}.parquet"
-
-# ------------------------------
-# LOAD ICD10 CSV (for AE filter)
-# ------------------------------
-ICD_CSV_PATH = PROJECT_PATH / "data/icd10_codes.csv"
-icd_df = pd.read_csv(ICD_CSV_PATH, dtype=str)
-
-code_conditions = []
-for code in icd_df["code"]:
-    if pd.isna(code):
-        continue
-    code = code.strip().replace(".", "")
-    if "%" not in code:
-        code = code + "%"
-    code_conditions.append(f"cc.CodeValue LIKE '{code}'")
-icd_where_clause = " OR ".join(code_conditions)
+    return parser.parse_args()
 
 
 # ------------------------------
 # HELPERS
 # ------------------------------
-def run_and_save(query: str, out_path: Path):
+def run_and_save(query: str, out_path: Path, conn):
     print(f"Running query for {out_path.name} ...")
     df = pd.read_sql(query, conn)
     print(f"  Retrieved {len(df):,} rows")
     df.to_parquet(out_path)
     print(f"  Saved to {out_path}")
 
+
 def write_sql(query: str, out_path: Path):
     out_path.write_text(query)
     print(f"Wrote SQL to {out_path}")
 
-def run_rx_batched(out_path: Path, batch_size: int = 200_000):
+
+def run_rx_batched(conn, db_user: str, out_path: Path, project_path: Path, batch_size: int = 200_000):
     """
     Run the Rx query in batches over elegible_members, save temporary parquet parts,
     then merge into a single parquet at `out_path`.
     """
+    member_table = f"{db_user}.dbo.elegible_members"
+
     rx_base_sql = f"""
     WITH em AS (
         SELECT 
             MemberUID,
             ROW_NUMBER() OVER (ORDER BY MemberUID) AS rn
-        FROM bef299.dbo.elegible_members_{args.db}M
+        FROM {member_table}
     )
     SELECT 
         r.MemberUID, 
@@ -89,7 +83,7 @@ def run_rx_batched(out_path: Path, batch_size: int = 200_000):
     """
 
     # Save SQL for record-keeping
-    write_sql(rx_base_sql, PROJECT_PATH / "queries/rx_opioid_combo_query_batched.sql")
+    write_sql(rx_base_sql, project_path / "queries/rx_opioid_combo_query_batched.sql")
 
     part_paths = []
     start = 1
@@ -131,25 +125,98 @@ def run_rx_batched(out_path: Path, batch_size: int = 200_000):
         p.unlink()
     print("  Temporary RX parquet parts removed.")
 
-# Now run the simpler downstream queries
-queries = {
-    "rx": (f"SELECT r.MemberUID, r.filldate, r.ndc11code, r.supplydayscount "
-           f"FROM [RxClaim] r JOIN bef299.dbo.elegible_members_{args.db}M em ON r.MemberUID = em.MemberUID", OUT_RX),
-    "ae": (f"SELECT c.MemberUID, cc.ServiceDate AS event_date, cc.CodeType, cc.CodeValue "
-           f"FROM [Claim] c JOIN [ClaimCode] cc ON c.ClaimUID = cc.ClaimUID "
-           f"JOIN bef299.dbo.elegible_members_{args.db}M em ON c.MemberUID = em.MemberUID "
-           f"WHERE cc.CodeType IN (17,18,22,23,24) AND ({icd_where_clause})", OUT_AE),
-    "demo": (f"SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, m.zip3value, m.statecode "
-             f"FROM [Member] m JOIN bef299.dbo.elegible_members_{args.db}M em ON m.MemberUID = em.MemberUID", OUT_DEMO),
-    "enroll": (f"SELECT e.MemberUID, e.effectivedate, e.terminationdate "
-               f"FROM [MemberEnrollment] e JOIN bef299.dbo.elegible_members_{args.db}M em ON e.MemberUID = em.MemberUID", OUT_ENROLL)
-}
 
-for name, (sql, out_path) in queries.items():
-    if name == "rx":
-        # Special batched handling for RX, with merge to a single parquet
-        run_rx_batched(out_path, batch_size=200_000)
-    else:
-        # One-shot query for all other tables
-        write_sql(sql, PROJECT_PATH / f"queries/{name}_opioid_combo_query.sql")
-        run_and_save(sql, out_path)
+def main():
+    args = parse_args()
+
+    suffix = args.suffix
+    db_user = args.db_user
+    scratch_path = args.path.expanduser()
+
+    project_path = Path(__file__).resolve().parent.parent
+    (project_path / "queries").mkdir(parents=True, exist_ok=True)
+
+    database = f"InovalonSample{args.db}M"
+    conn_str = (
+        "DRIVER=ODBC Driver 17 for SQL Server;"
+        "Server=CCBWSQLP01.med.harvard.edu;"
+        "Trusted_Connection=Yes;"
+        f"Database={database};"
+        "TDS_Version=8.0;Encryption=require;Port=1433;REALM=MED.HARVARD.EDU"
+    )
+
+    conn = pyodbc.connect(conn_str)
+
+    # ------------------------------
+    # PATH CONFIG
+    # ------------------------------
+    out_rx = scratch_path / f"rx_fills_opioid{suffix}_raw.parquet"
+    out_ae = scratch_path / f"adverse_events_opioid{suffix}.parquet"
+    out_demo = scratch_path / f"demographics_opioid{suffix}.parquet"
+    out_enroll = scratch_path / f"enrollment_opioid{suffix}.parquet"
+
+    # ------------------------------
+    # LOAD ICD10 CSV (for AE filter)
+    # ------------------------------
+    icd_csv_path = project_path / args.icd_codes_path
+    icd_df = pd.read_csv(icd_csv_path, dtype=str)
+
+    code_conditions = []
+    for code in icd_df["code"]:
+        if pd.isna(code):
+            continue
+        c = code.strip().replace(".", "")
+        if "%" not in c:
+            c = c + "%"
+        code_conditions.append(f"cc.CodeValue LIKE '{c}'")
+    icd_where_clause = " OR ".join(code_conditions)
+
+    member_table = f"{db_user}.dbo.elegible_members"
+
+    # ------------------------------
+    # QUERIES
+    # ------------------------------
+    queries = {
+        "rx": (
+            f"SELECT r.MemberUID, r.filldate, r.ndc11code, r.supplydayscount "
+            f"FROM [RxClaim] r JOIN {member_table} em ON r.MemberUID = em.MemberUID",
+            out_rx,
+        ),
+        "ae": (
+            f"SELECT c.MemberUID, cc.ServiceDate AS event_date, cc.CodeType, cc.CodeValue "
+            f"FROM [Claim] c JOIN [ClaimCode] cc ON c.ClaimUID = cc.ClaimUID "
+            f"JOIN {member_table} em ON c.MemberUID = em.MemberUID "
+            f"WHERE cc.CodeType IN (17,18,22,23,24) AND ({icd_where_clause})",
+            out_ae,
+        ),
+        "demo": (
+            f"SELECT m.MemberUID, m.birthyear, m.gendercode, m.raceethnicitytypecode, "
+            f"m.zip3value, m.statecode "
+            f"FROM [Member] m JOIN {member_table} em ON m.MemberUID = em.MemberUID",
+            out_demo,
+        ),
+        "enroll": (
+            f"SELECT e.MemberUID, e.effectivedate, e.terminationdate "
+            f"FROM [MemberEnrollment] e JOIN {member_table} em ON e.MemberUID = em.MemberUID",
+            out_enroll,
+        ),
+    }
+
+    # ------------------------------
+    # EXECUTION
+    # ------------------------------
+    try:
+        for name, (sql, out_path) in queries.items():
+            if name == "rx":
+                # Special batched handling for RX, with merge to a single parquet
+                run_rx_batched(conn, db_user=db_user, out_path=out_path, project_path=project_path, batch_size=200_000)
+            else:
+                # One-shot query for all other tables
+                write_sql(sql, project_path / f"queries/{name}_opioid_combo_query.sql")
+                run_and_save(sql, out_path, conn)
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()

@@ -42,7 +42,7 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(description="Polypharmacy spell detection + AE labeling")
 
-    parser.add_argument("--suffix", type=str, default="_opioid_sample1M_grace15_minspell7",
+    parser.add_argument("--suffix", type=str, default="_sample1M_grace15_minspell7",
                         help="Suffix used in filenames (e.g., '_sample1M' or '')")
 
 

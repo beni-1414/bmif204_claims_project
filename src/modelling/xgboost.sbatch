@@ -15,4 +15,4 @@ module load gcc/14.2.0 python/3.13.1
 # Activate Python environment (if applicable)
 source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
-python -m src.modelling.xgboost_trainer --db 5 --single_train
+python -m src.modelling.xgboost_trainer #args (see src/modelling/xgboost_trainer.py for details)
