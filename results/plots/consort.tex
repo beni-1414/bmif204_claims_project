@@ -1,0 +1,93 @@
+% consort_diagram.tex
+\begin{tikzpicture}[
+  node distance=10mm,
+  cohort/.style={
+    rectangle,
+    draw,
+    rounded corners,
+    align=center,
+    font=\small,
+    text width=6cm,
+  },
+  filter/.style={
+    rectangle,
+    draw,
+    align=center,
+    font=\scriptsize,
+    text width=6cm,
+  },
+  arrow/.style={-{Latex[length=3mm]}, thick}
+]
+
+% ===== VERTICAL COHORT NODES (ONLY SIZES) =====
+\node[cohort] (p0) {Patients in database\\[2pt]
+  \textbf{N = 5,000,000 patients}
+};
+
+\node[cohort, below=of p0] (p1) {
+  \textbf{n = 824,793 patients}
+};
+
+\node[cohort, below=of p1] (p2) {
+  \textbf{n = 634,355 spells}\\
+  239,868 patients
+};
+
+\node[cohort, below=of p2] (p3) {
+  \textbf{n = 1,581,017 spells}\\
+  239,868 patients
+};
+
+\node[cohort, below=of p3] (p4) {
+  \textbf{n = 814,412 spells}\\
+  206,664 patients
+};
+
+\node[cohort, below=of p4] (p5) {
+  Spells with AE\\[2pt]
+  \textbf{10,898 / 814,412 spells}
+};
+
+% ===== VERTICAL ARROWS =====
+\draw[arrow] (p0) -- (p1);
+\draw[arrow] (p1) -- (p2);
+\draw[arrow] (p2) -- (p3);
+\draw[arrow] (p3) -- (p4);
+\draw[arrow] (p4) -- (p5);
+
+% Convenience coordinates: midpoints of vertical segments
+\coordinate (m1) at ($(p0.south)!0.5!(p1.north)$);
+\coordinate (m2) at ($(p1.south)!0.5!(p2.north)$);
+\coordinate (m3) at ($(p2.south)!0.5!(p3.north)$);
+\coordinate (m4) at ($(p3.south)!0.5!(p4.north)$);
+
+% ===== SIDEWAYS FILTER / ACTION ARROWS =====
+
+% SQL filtering -> between p0 and p1
+\node[filter, left=35mm of m1] (f1) {
+  SQL filtering of drugs of interest (opioids)\\
+  and 3 distinct drugs
+};
+\draw[arrow] (f1.east) -- (m1);
+
+% Generate spells (no split) -> between p1 and p2
+\node[filter, left=35mm of m2] (f2) {
+  Generate the spells (no split yet)
+};
+\draw[arrow] (f2.east) -- (m2);
+
+% Split spells -> between p2 and p3
+\node[filter, left=35mm of m3] (f3) {
+  Split spells on drug regimen changes
+};
+\draw[arrow] (f3.east) -- (m3);
+
+% Preprocessing -> between p3 and p4
+\node[filter, left=35mm of m4] (f4) {
+  Preprocessing for data quality,\\
+  eligibility enforcement and\\
+  data leakage prevention
+};
+\draw[arrow] (f4.east) -- (m4);
+
+\end{tikzpicture}
