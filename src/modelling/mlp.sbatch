@@ -15,4 +15,4 @@ module load gcc/14.2.0 python/3.13.1
 # Activate Python environment (if applicable)
 source ~/bmif204/bmif204_claims_project/.venv/bin/activate
 
-python -m src.modelling.mlp_pooled_embeddings --title "MLP AE30d model with MedTok embeddings 5M pooled" --db 5
+python -m src.modelling.mlp_pooled_embeddings --title "MLP AE30d model with MedTok embeddings 5M pooled" --db 5 --suffix _FINAL

@@ -33,6 +33,7 @@ def parse_args():
 
     parser.add_argument("--title", type=str, default="MLP AE30d model with MedTok embeddings (pooled)",
                         help="Description/title for this training run")
+    parser.add_argument("--suffix", type=str, default="_FINAL", help="Suffix for input files")
     parser.add_argument("--db", type=int, default=5, help="Database size (1 or 5) M")
 
     args = parser.parse_args()
@@ -43,7 +44,7 @@ args = parse_args()
 TITLE = args.title
 db_size = args.db
 
-SUFFIX = f"_opioid_sample{db_size}M_grace15_minspell7_ae_censoring"
+SUFFIX = args.suffix
 BASE = Path("/n/scratch/users/b/bef299/polypharmacy_project_fhd8SDd3U50")
 
 demographics_path = BASE / f"demographics_opioid_sample{db_size}M.parquet"
