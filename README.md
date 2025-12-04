@@ -2,72 +2,50 @@
 This project explores the risk factors in polypharmacy patients that lead to a higher incidence of AEs, and explores diverse prediction approaches.
 
 ## Structure
+- `data/`: Reference inputs such as `opioid_ndc11_list.csv` and `icd10_codes.csv`.
+- `results/`: Generated reports and tables (for example, `results/report/consort_diagram_data.txt`, `results/tables/`).
+- `src/sql_extraction/`: SQL helper scripts to prepare tables and pull raw Rx, AE, and ICD-10 claims from Inovalon.
+- `src/drug_mapping/`: Utilities to map NDC codes to ATC drug classes.
+- `src/spell_generation/`: Pipeline to build spells, split spells by drug changes, and prepare ICD-10 features.
+- `src/modelling/`: Feature preprocessing plus baseline and neural model trainers (with associated notebooks and sbatch files).
+- `exploration.ipynb`, `final_plots.ipynb`: Notebooks for exploratory analysis and figures.
+- `requirements.txt`: Python dependencies for the full pipeline.
 
 
 ## Functionality
 ### Data extraction scripts - `src/sql_extraction`
-- `extract_raw_sql_opioid.py`: Connects to the Inovalon SQL Server and extracts member-level opioid prescription and claim data, exporting key datasets as Parquet files for downstream processing (prescription fills, adverse events, demographics, enrollment).
-- `opioid_ndcs.py`: This script uses the OpenFDA database (Download from https://open.fda.gov/apis/drug/ndc/download/) to extract a CSV with all the rellevant NDC codes, and uses a library (#https://github.com/eddie-cosma/ndclib) to convert between NDC10 and NDC11. Only need to be rerun if changing the list of drugs.
-- `prepare_database_for_extraction.py`: Prepares helper tables and database objects (for example inserting the NDC list) needed by the extraction queries.
-- `extract_icd10_codes.py`: Extracts ICD-10 claim records around spell start/change times to support AE and diagnosis postprocessing.
-- `test_connection.py`: Small utility to verify database connectivity and credentials.
+- `extract_raw_sql_opioid.py`: Connects to Inovalon SQL Server and exports prescription fills, AEs, demographics, and enrollment as Parquet for downstream use.
+- `opioid_ndcs.py`: Builds the query drug list from the OpenFDA NDC download (https://open.fda.gov/apis/drug/ndc/download/) using ndclib conversion; rerun only when changing the drug set.
+- `prepare_database_for_extraction.py`: Creates helper tables and inserts the NDC list required by the extraction queries.
+- `extract_icd10_codes.py`: Pulls ICD-10 claim records around spell start/change windows to support AE and diagnosis postprocessing.
+- `test_connection.py`: Verifies database connectivity and credentials.
 
 ### Data processing scripts - `src/spell_generation`
 #### `spell_generation.py`
+Builds polypharmacy spells and AE labels from the extracted Parquet files.
 
-This script detects **polypharmacy spells** and labels them with **adverse events (AEs)** using prescription, enrollment, and claims data extracted from SQL.
-
-##### Overview
-
-Each patient’s prescription history is scanned to identify continuous periods (“spells”) with multiple concurrent drugs. These spells are then:
-
-* Restricted to those involving **opioid fills**
-* Censored by **enrollment periods** and **washout windows**
-* Annotated with **AEs** occurring during follow-up
-
-##### Steps
-
-1. **Input & Arguments**
-   Reads Parquet files (`rx_fills`, `adverse_events`, `enrollment`, `demographics`) from the scratch directory.
-   Key parameters:
-
-   * `--min_concurrent`: Minimum overlapping drugs (default = 3)
-   * `--extend_days`: Grace period after drop below threshold (default = 21)
-   * `--min_spell_len`: Minimum total duration (default = 30 + extend_days)
-
-2. **Spell Detection**
-
-   * Merges overlapping fill intervals per drug.
-   * Tracks concurrent drug counts over time.
-   * Starts a spell when concurrent ≥ `min_concurrent` and an opioid is present; ends after `extend_days` below threshold.
-   * Runs in **parallel** across members using up to 8 CPUs.
-
-3. **Filtering & Censoring**
-
-   * Removes spells not covered by enrollment or lacking ≥ 180 days pre-index enrollment.
-
-4. **AE Labeling**
-
-   * Flags spells with at least one **new AE** code (not seen before spell start) during the active or follow-up period.
-   * NOTE: The AE codes that do have been seen before are simply ignored, 
-
-5. **Output**
-
-   * Saves final dataset:
-     `spells_with_labels_<EXTEND_DAYS>_days<suffix>.parquet`
-   * Writes debug sample CSV for quick inspection.
+- Inputs: `rx_fills`, `adverse_events`, `enrollment`, and `demographics` Parquet files plus a query drug list (default `data/opioid_ndc11_list.csv`); key args include `--min_concurrent`, `--grace_period`, `--min_spell_len`, `--input_suffix`, and `--output_suffix`.
+- Spell detection: merges overlapping fill windows per `atc_3_code`, tags fills in the query drug list, and starts a spell when concurrent count >= threshold with at least one query drug; ends after `grace_period` days below threshold and keeps spells meeting the minimum length (runs in parallel across members).
+- Censoring: retains spells overlapping enrollment and with >=180 days of enrollment before entry.
+- AE labeling: shifts AE dates one day earlier to avoid same-day drug-change clashes, keeps spells whose first AE code in-window is new relative to prior history, and stores AE flags/dates/codes.
+- Outputs: `spells_with_labels<suffix>.parquet` and `drug_changes<suffix>.parquet` with spell ids and add/drop events.
 
 #### `split_spells_from_changes.py`
-This code takes the output of the spell_generation script and generates a table that splits the spells by the drug additions, and aligns all of them at time 0.
+Splits each spell at drug add/drop events, aligning timelines so changes start at t=0 for downstream modeling.
 
-#### `extract_icd10_codes.py`
-This code extracts all the claims with an ICD10 code in the 6 months before the start of a splitted spell (so before a drug change).
+#### `drug_combo_labeling.py`
+Attaches the concurrent drug combination present at each split-spell start using the `drug_changes` output.
 
 #### `icd10_postprocessing.py`
-This code clusters the ICD10 codes extracted into a `_clustered` parquet file ready for analysis.
+Clusters extracted ICD-10 codes into a `_clustered` Parquet file ready for analysis.
 
-#### `exploration_final.ipynb`
-Run the notebook to get descriptive stats and plots. Expand with more plots as needed.
+### Modeling - `src/modelling`
+- `final_preprocessing.py`: Merges spells, demographics, and clustered ICD-10 features, builds AE labels within a fixed window, and deduplicates member + drug combos.
+- `drug_pair_analysis.py`: Counts drug-pair occurrences and runs chi-square tests versus AE outcomes with multiple-testing correction.
+- `logreg.py` / `logreg.sbatch` / `logreg.ipynb`: Logistic regression baseline on multi-hot drug features with scripts/notebook and an O2 sbatch wrapper.
+- `mlp_medtok_base.py`: Trains an AE classifier using MedTok embeddings for drugs/diagnoses with an MLP backbone.
+- `mlp_pooled_embeddings.py` / `mlp.sbatch`: Variant MLP using pooled embeddings and weighted sampling; sbatch for cluster runs.
+- `xgboost_trainer.py` / `xgboost.sbatch` / `xgboost.ipynb`: Gradient-boosted tree baseline with script, tuning notebook, and sbatch config.
 
 ## Usage
 ### Environment
@@ -83,7 +61,7 @@ First, extract data from SQL. This process is a bit tricky.
 python src/sql_extraction/prepare_database_for_insertion --db 5
 ```
 
-2. Run this query directly in SQL server (it can take a few hours, on the 5M db it took 4h30)
+2. Run this query (``src/sql_extraction/elegible_members_query.sql``) directly in SQL server (it can take a few hours, on the 5M db it took 4h30)
 ```sql
 SELECT
     r.MemberUID
@@ -113,14 +91,16 @@ python src/drug_mapping/join_ndc_to_atc.py input.parquet
 sbatch src/spell_generation/pipeline.sbatch
 ```
 
-6. Manually run the ICD10 extraction from SQL (it can't be run in a job, and if it takes longer than a few seconds to start it means the db is locked by someone else. Recommend running at night when no one is using the db):
+6. Manually run the ICD10 extraction from SQL (it can't be easily chained in a job due to the kinit command, and if it takes longer than a few seconds to start it means the db is locked by someone else. Recommend running at night when no one is using the db):
 ```bash
 python src/sql_extraction/extract_icd10_codes.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
 
 7. Run the ICD10 postprocessing (is quite fast):
 ```bash
-python src/icd10_postprocessing.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
+python src/sql_extraction/icd10_postprocessing.py --suffix "WHATEVER YOU USED IN THE sbatch FILE"
 ```
 
 8. With this, you are ready to run the exploration notebook, train models, etc. Be sure to use the final_preprocessing script on top of whatever you do to get the final features and apply the necessary filters for data leakage prevention and quality control.
+
+NOTE: in the future, it would be ideal to get some way of embedding the authentication token into the jobs, so the entire pipeline can be run in a single sbatch job, allowing for easier reproducibility and automation.
